@@ -3,11 +3,13 @@ package flow
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/flowswiss/goclient"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 var _ tfsdk.Provider = (*provider)(nil)
@@ -34,7 +36,7 @@ func (p *provider) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostic
 		Attributes: map[string]tfsdk.Attribute{
 			"token": {
 				Type:                types.StringType,
-				MarkdownDescription: "Authentication token for the Flow API",
+				MarkdownDescription: "authentication token for the flow api",
 				Required:            true,
 				Sensitive:           true,
 			},
@@ -58,6 +60,10 @@ func (p *provider) Configure(ctx context.Context, request tfsdk.ConfigureProvide
 	p.client = goclient.NewClient(
 		goclient.WithToken(data.Token),
 		goclient.WithUserAgent(fmt.Sprintf("terraform-provider-flow/%s", p.version)),
+
+		goclient.WithHTTPClientOption(func(c *http.Client) {
+			c.Transport = logTransport{base: c.Transport}
+		}),
 	)
 
 	p.configured = true
@@ -65,7 +71,8 @@ func (p *provider) Configure(ctx context.Context, request tfsdk.ConfigureProvide
 
 func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
-		"flow_volume": computeVolumeResourceType{},
+		"flow_compute_volume":            computeVolumeResourceType{},
+		"flow_compute_volume_attachment": computeVolumeAttachmentResourceType{},
 	}, nil
 }
 
@@ -88,4 +95,37 @@ func convertToLocalProviderType(p tfsdk.Provider) (prov *provider, diagnostics d
 	}
 
 	return
+}
+
+type logTransport struct {
+	base http.RoundTripper
+}
+
+func (l logTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	additionalContext := map[string]interface{}{
+		"method": req.Method,
+		"url":    req.URL.String(),
+	}
+
+	res, err := l.transport().RoundTrip(req)
+
+	if err == nil {
+		additionalContext["request_id"] = res.Header.Get("X-Request-ID")
+
+		msg := fmt.Sprintf("request to `%s %s` resulted in `%s`", req.Method, req.URL.String(), res.Status)
+		tflog.Trace(req.Context(), msg, additionalContext)
+	} else {
+		msg := fmt.Sprintf("request to `%s %s` resulted in `%s`", req.Method, req.URL.String(), err)
+		tflog.Trace(req.Context(), msg, additionalContext)
+	}
+
+	return res, err
+}
+
+func (l logTransport) transport() http.RoundTripper {
+	if l.base == nil {
+		return http.DefaultTransport
+	}
+
+	return l.base
 }
