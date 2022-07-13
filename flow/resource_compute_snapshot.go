@@ -12,9 +12,11 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-var _ tfsdk.ResourceType = (*computeSnapshotResourceType)(nil)
-var _ tfsdk.Resource = (*computeSnapshotResource)(nil)
-var _ tfsdk.ResourceWithImportState = (*computeSnapshotResource)(nil)
+var (
+	_ tfsdk.ResourceType            = (*computeSnapshotResourceType)(nil)
+	_ tfsdk.Resource                = (*computeSnapshotResource)(nil)
+	_ tfsdk.ResourceWithImportState = (*computeSnapshotResource)(nil)
+)
 
 type computeSnapshotResourceData struct {
 	ID        types.Int64  `tfsdk:"id"`

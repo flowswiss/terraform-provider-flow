@@ -13,9 +13,11 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-var _ tfsdk.ResourceType = (*computeVolumeResourceType)(nil)
-var _ tfsdk.Resource = (*computeVolumeResource)(nil)
-var _ tfsdk.ResourceWithImportState = (*computeVolumeResource)(nil)
+var (
+	_ tfsdk.ResourceType            = (*computeVolumeResourceType)(nil)
+	_ tfsdk.Resource                = (*computeVolumeResource)(nil)
+	_ tfsdk.ResourceWithImportState = (*computeVolumeResource)(nil)
+)
 
 type computeVolumeResourceData struct {
 	ID           types.Int64  `tfsdk:"id"`
