@@ -91,6 +91,9 @@ func (c computeNetworkResourceType) GetSchema(ctx context.Context) (tfsdk.Schema
 				MarkdownDescription: "list of domain name servers",
 				Optional:            true,
 				Computed:            true,
+				PlanModifiers: tfsdk.AttributePlanModifiers{
+					tfsdk.UseStateForUnknown(),
+				},
 			},
 			"allocation_pool": {
 				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
@@ -108,12 +111,18 @@ func (c computeNetworkResourceType) GetSchema(ctx context.Context) (tfsdk.Schema
 				MarkdownDescription: "allocation pool",
 				Optional:            true,
 				Computed:            true,
+				PlanModifiers: tfsdk.AttributePlanModifiers{
+					tfsdk.UseStateForUnknown(),
+				},
 			},
 			"gateway_ip": {
 				Type:                types.StringType,
 				MarkdownDescription: "gateway IP of the network",
 				Optional:            true,
 				Computed:            true,
+				PlanModifiers: tfsdk.AttributePlanModifiers{
+					tfsdk.UseStateForUnknown(),
+				},
 			},
 		},
 	}, nil
