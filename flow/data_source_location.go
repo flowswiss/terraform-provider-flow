@@ -62,7 +62,7 @@ func (l locationDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provi
 		return nil, diagnostics
 	}
 
-	return &locationDataSource{
+	return locationDataSource{
 		client: prov.client,
 	}, diagnostics
 }

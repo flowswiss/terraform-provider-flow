@@ -83,7 +83,7 @@ func (l moduleDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provide
 		return nil, diagnostics
 	}
 
-	return &moduleDataSource{
+	return moduleDataSource{
 		client: prov.client,
 	}, diagnostics
 }

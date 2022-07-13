@@ -100,7 +100,7 @@ func (t computeVolumeResourceType) NewResource(ctx context.Context, p tfsdk.Prov
 		return nil, diagnostics
 	}
 
-	return &computeVolumeResource{
+	return computeVolumeResource{
 		volumeService: compute.NewVolumeService(prov.client),
 	}, diagnostics
 }

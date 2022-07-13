@@ -83,7 +83,7 @@ func (t computeSnapshotResourceType) NewResource(ctx context.Context, p tfsdk.Pr
 		return nil, diagnostics
 	}
 
-	return &computeSnapshotResource{
+	return computeSnapshotResource{
 		snapshotService: compute.NewSnapshotService(prov.client),
 	}, diagnostics
 }

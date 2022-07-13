@@ -61,7 +61,7 @@ func (t computeKeyPairDataSourceType) NewDataSource(ctx context.Context, p tfsdk
 		return nil, diagnostics
 	}
 
-	return &computeKeyPairDataSource{
+	return computeKeyPairDataSource{
 		keyPairService: compute.NewKeyPairService(prov.client),
 	}, diagnostics
 }

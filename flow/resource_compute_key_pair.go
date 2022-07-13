@@ -74,7 +74,7 @@ func (c computeKeyPairResourceType) NewResource(ctx context.Context, p tfsdk.Pro
 		return nil, diagnostics
 	}
 
-	return &computeKeyPairResource{
+	return computeKeyPairResource{
 		keyPairService: compute.NewKeyPairService(prov.client),
 	}, diagnostics
 }
