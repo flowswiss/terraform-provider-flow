@@ -73,6 +73,7 @@ func (p *provider) Configure(ctx context.Context, request tfsdk.ConfigureProvide
 func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
 		"flow_compute_key_pair":          computeKeyPairResourceType{},
+		"flow_compute_network":           computeNetworkResourceType{},
 		"flow_compute_snapshot":          computeSnapshotResourceType{},
 		"flow_compute_volume":            computeVolumeResourceType{},
 		"flow_compute_volume_attachment": computeVolumeAttachmentResourceType{},
@@ -85,6 +86,7 @@ func (p *provider) GetDataSources(ctx context.Context) (map[string]tfsdk.DataSou
 		"flow_location": locationDataSourceType{},
 
 		"flow_compute_key_pair": computeKeyPairDataSourceType{},
+		"flow_compute_network":  computeNetworkDataSourceType{},
 	}, nil
 }
 
