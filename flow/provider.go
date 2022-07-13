@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/flowswiss/goclient"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -71,6 +72,7 @@ func (p *provider) Configure(ctx context.Context, request tfsdk.ConfigureProvide
 
 func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
+		"flow_compute_snapshot":          computeSnapshotResourceType{},
 		"flow_compute_volume":            computeVolumeResourceType{},
 		"flow_compute_volume_attachment": computeVolumeAttachmentResourceType{},
 	}, nil
@@ -95,6 +97,33 @@ func convertToLocalProviderType(p tfsdk.Provider) (prov *provider, diagnostics d
 	}
 
 	return
+}
+
+func waitForCondition(ctx context.Context, check func(ctx context.Context) (bool, diag.Diagnostics)) (diagnostics diag.Diagnostics) {
+	done, d := check(ctx)
+	diagnostics.Append(d...)
+	if done || diagnostics.HasError() {
+		return
+	}
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+
+		case <-ctx.Done():
+			diagnostics.AddError("Timeout", "Timeout while waiting for condition")
+			return
+		}
+
+		done, d := check(ctx)
+		diagnostics.Append(d...)
+		if done || diagnostics.HasError() {
+			return
+		}
+	}
 }
 
 type logTransport struct {
