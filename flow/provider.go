@@ -76,6 +76,7 @@ func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceT
 		"flow_compute_network":           computeNetworkResourceType{},
 		"flow_compute_router":            computeRouterResourceType{},
 		"flow_compute_router_interface":  computeRouterInterfaceResourceType{},
+		"flow_compute_router_route":      computeRouterRouteResourceType{},
 		"flow_compute_snapshot":          computeSnapshotResourceType{},
 		"flow_compute_volume":            computeVolumeResourceType{},
 		"flow_compute_volume_attachment": computeVolumeAttachmentResourceType{},
@@ -91,6 +92,7 @@ func (p *provider) GetDataSources(ctx context.Context) (map[string]tfsdk.DataSou
 		"flow_compute_network":          computeNetworkDataSourceType{},
 		"flow_compute_router":           computeRouterDataSourceType{},
 		"flow_compute_router_interface": computeRouterInterfaceDataSourceType{},
+		"flow_compute_router_route":     computeRouterRouteDataSourceType{},
 	}, nil
 }
 
