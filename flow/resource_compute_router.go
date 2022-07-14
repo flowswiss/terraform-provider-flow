@@ -30,7 +30,12 @@ func (c *computeRouterResourceData) FromEntity(router compute.Router) {
 	c.Name = types.String{Value: router.Name}
 	c.LocationID = types.Int64{Value: int64(router.Location.ID)}
 	c.Public = types.Bool{Value: router.Public}
-	c.PublicIP = types.String{Value: router.PublicIP}
+
+	if router.Public {
+		c.PublicIP = types.String{Value: router.PublicIP}
+	} else {
+		c.PublicIP = types.String{Null: true}
+	}
 }
 
 type computeRouterResourceType struct{}

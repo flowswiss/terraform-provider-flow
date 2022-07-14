@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/flowswiss/goclient"
@@ -15,21 +16,23 @@ import (
 
 var _ tfsdk.Provider = (*provider)(nil)
 
-func New(version string) func() tfsdk.Provider {
-	return func() tfsdk.Provider {
-		return &provider{version: version}
-	}
+var (
+	version         = "dev"
+	defaultEndpoint = "https://api.flow.swiss/"
+)
+
+func New() tfsdk.Provider {
+	return &provider{}
 }
 
 type provider struct {
 	client     goclient.Client
 	configured bool
-
-	version string
 }
 
 type providerData struct {
-	Token string `tfsdk:"token"`
+	Token    types.String `tfsdk:"token"`
+	Endpoint types.String `tfsdk:"endpoint"`
 }
 
 func (p *provider) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
@@ -38,29 +41,54 @@ func (p *provider) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostic
 			"token": {
 				Type:                types.StringType,
 				MarkdownDescription: "authentication token for the flow api",
-				Required:            true,
+				Optional:            true,
 				Sensitive:           true,
+			},
+			"endpoint": {
+				Type:                types.StringType,
+				MarkdownDescription: "endpoint for the flow api",
+				Optional:            true,
 			},
 		},
 	}, nil
 }
 
 func (p *provider) Configure(ctx context.Context, request tfsdk.ConfigureProviderRequest, response *tfsdk.ConfigureProviderResponse) {
-	var data providerData
+	if p.configured {
+		return
+	}
 
+	var data providerData
 	diagnostics := request.Config.Get(ctx, &data)
 	response.Diagnostics.Append(diagnostics...)
 	if response.Diagnostics.HasError() {
 		return
 	}
 
-	if p.configured {
-		return
+	if data.Token.Null {
+		if val, ok := os.LookupEnv("FLOW_TOKEN"); ok {
+			data.Token = types.String{Value: val}
+		} else {
+			response.Diagnostics.AddError(
+				"Missing Token",
+				"The token is missing. Please set the token in the provider configuration or set the FLOW_TOKEN environment variable.",
+			)
+			return
+		}
+	}
+
+	if data.Endpoint.Null {
+		data.Endpoint = types.String{Value: defaultEndpoint}
+
+		if val, ok := os.LookupEnv("FLOW_ENDPOINT"); ok {
+			data.Endpoint = types.String{Value: val}
+		}
 	}
 
 	p.client = goclient.NewClient(
-		goclient.WithToken(data.Token),
-		goclient.WithUserAgent(fmt.Sprintf("terraform-provider-flow/%s", p.version)),
+		goclient.WithToken(data.Token.Value),
+		goclient.WithBase(data.Endpoint.Value),
+		goclient.WithUserAgent(fmt.Sprintf("terraform-provider-flow/%s", version)),
 
 		goclient.WithHTTPClientOption(func(c *http.Client) {
 			c.Transport = logTransport{base: c.Transport}

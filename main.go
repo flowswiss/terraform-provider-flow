@@ -10,8 +10,6 @@ import (
 	"github.com/flowswiss/terraform-provider-flow/flow"
 )
 
-var version = "dev"
-
 func main() {
 	debug := false
 
@@ -24,7 +22,7 @@ func main() {
 		ProtocolVersion: 6,
 	}
 
-	err := providerserver.Serve(context.Background(), flow.New(version), opts)
+	err := providerserver.Serve(context.Background(), flow.New, opts)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
