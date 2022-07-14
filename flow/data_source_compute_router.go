@@ -9,6 +9,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
@@ -29,6 +31,18 @@ func (c *computeRouterDataSourceData) FromEntity(router compute.Router) {
 	c.Name = types.String{Value: router.Name}
 	c.LocationID = types.Int64{Value: int64(router.Location.ID)}
 	c.Public = types.Bool{Value: router.Public}
+}
+
+func (c computeRouterDataSourceData) AppliesTo(router compute.Router) bool {
+	if !c.ID.Null && int(c.ID.Value) != router.ID {
+		return false
+	}
+
+	if !c.Name.Null && c.Name.Value != router.Name {
+		return false
+	}
+
+	return true
 }
 
 type computeRouterDataSourceType struct{}
@@ -96,22 +110,15 @@ func (c computeRouterDataSource) Read(ctx context.Context, request tfsdk.ReadDat
 		return
 	}
 
-	for _, router := range list.Items {
-		if !config.ID.Null && int(config.ID.Value) != router.ID {
-			continue
-		}
-
-		if !config.Name.Null && config.Name.Value != router.Name {
-			continue
-		}
-
-		var state computeRouterDataSourceData
-		state.FromEntity(router)
-
-		diagnostics = response.State.Set(ctx, state)
-		response.Diagnostics.Append(diagnostics...)
+	router, err := filter.FindOne(config, list.Items)
+	if err != nil {
+		response.Diagnostics.AddError("Not Found", fmt.Sprintf("unable to find router: %s", err))
 		return
 	}
 
-	response.Diagnostics.AddError("Not Found", "requested router could not be found")
+	var state computeRouterDataSourceData
+	state.FromEntity(router)
+
+	diagnostics = response.State.Set(ctx, state)
+	response.Diagnostics.Append(diagnostics...)
 }

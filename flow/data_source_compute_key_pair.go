@@ -9,6 +9,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
@@ -26,6 +28,22 @@ func (c *computeKeyPairDataSourceData) FromEntity(keyPair compute.KeyPair) {
 	c.ID = types.Int64{Value: int64(keyPair.ID)}
 	c.Name = types.String{Value: keyPair.Name}
 	c.Fingerprint = types.String{Value: keyPair.Fingerprint}
+}
+
+func (c computeKeyPairDataSourceData) AppliesTo(keyPair compute.KeyPair) bool {
+	if !c.ID.Null && int(c.ID.Value) != keyPair.ID {
+		return false
+	}
+
+	if !c.Name.Null && c.Name.Value != keyPair.Name {
+		return false
+	}
+
+	if !c.Fingerprint.Null && c.Fingerprint.Value != keyPair.Fingerprint {
+		return false
+	}
+
+	return true
 }
 
 type computeKeyPairDataSourceType struct{}
@@ -84,26 +102,15 @@ func (s computeKeyPairDataSource) Read(ctx context.Context, request tfsdk.ReadDa
 		return
 	}
 
-	for _, keyPair := range list.Items {
-		if !config.ID.Null && int(config.ID.Value) != keyPair.ID {
-			continue
-		}
-
-		if !config.Name.Null && config.Name.Value != keyPair.Name {
-			continue
-		}
-
-		if !config.Fingerprint.Null && config.Fingerprint.Value != keyPair.Fingerprint {
-			continue
-		}
-
-		var state computeKeyPairDataSourceData
-		state.FromEntity(keyPair)
-
-		diagnostics = response.State.Set(ctx, state)
-		response.Diagnostics.Append(diagnostics...)
+	keyPair, err := filter.FindOne(config, list.Items)
+	if err != nil {
+		response.Diagnostics.AddError("Not Found", fmt.Sprintf("unable to find key pair: %s", err))
 		return
 	}
 
-	response.Diagnostics.AddError("Not Found", "requested key pair could not be found")
+	var state computeKeyPairDataSourceData
+	state.FromEntity(keyPair)
+
+	diagnostics = response.State.Set(ctx, state)
+	response.Diagnostics.Append(diagnostics...)
 }

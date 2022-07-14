@@ -9,6 +9,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
@@ -30,6 +32,22 @@ func (c *computeRouterRouteDataSourceData) FromEntity(routerID int, route comput
 	c.NextHop = types.String{Value: route.NextHop}
 }
 
+func (c computeRouterRouteDataSourceData) AppliesTo(route compute.Route) bool {
+	if !c.ID.Null && c.ID.Value != int64(route.ID) {
+		return false
+	}
+
+	if !c.Destination.Null && c.Destination.Value != route.Destination {
+		return false
+	}
+
+	if !c.NextHop.Null && c.NextHop.Value != route.NextHop {
+		return false
+	}
+
+	return true
+}
+
 type computeRouterRouteDataSourceType struct{}
 
 func (c computeRouterRouteDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
@@ -38,7 +56,8 @@ func (c computeRouterRouteDataSourceType) GetSchema(ctx context.Context) (tfsdk.
 			"id": {
 				Type:                types.Int64Type,
 				MarkdownDescription: "unique identifier of the route",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
 			},
 			"router_id": {
 				Type:                types.Int64Type,
@@ -48,11 +67,13 @@ func (c computeRouterRouteDataSourceType) GetSchema(ctx context.Context) (tfsdk.
 			"destination": {
 				Type:                types.StringType,
 				MarkdownDescription: "IP destination range of the route",
+				Optional:            true,
 				Computed:            true,
 			},
 			"next_hop": {
 				Type:                types.StringType,
 				MarkdownDescription: "IP address of the next hop",
+				Optional:            true,
 				Computed:            true,
 			},
 		},
@@ -82,25 +103,22 @@ func (c computeRouterRouteDataSource) Read(ctx context.Context, request tfsdk.Re
 		return
 	}
 
-	routeID := int(config.ID.Value)
 	routerID := int(config.RouterID.Value)
-
 	list, err := compute.NewRouteService(c.client, routerID).List(ctx, goclient.Cursor{NoFilter: 1})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list routes: %s", err))
 		return
 	}
 
-	for _, route := range list.Items {
-		if route.ID == routeID {
-			var state computeRouterRouteDataSourceData
-			state.FromEntity(routerID, route)
-
-			diagnostics = response.State.Set(ctx, state)
-			response.Diagnostics.Append(diagnostics...)
-			return
-		}
+	route, err := filter.FindOne(config, list.Items)
+	if err != nil {
+		response.Diagnostics.AddError("Not Found", fmt.Sprintf("unable to find route: %s", err))
+		return
 	}
 
-	response.Diagnostics.AddError("Not Found", "requested route could not be found")
+	var state computeRouterRouteDataSourceData
+	state.FromEntity(routerID, route)
+
+	diagnostics = response.State.Set(ctx, state)
+	response.Diagnostics.Append(diagnostics...)
 }

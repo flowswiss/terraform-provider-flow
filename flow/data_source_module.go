@@ -10,6 +10,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var _ tfsdk.DataSourceType = (*moduleDataSourceType)(nil)
@@ -42,6 +44,18 @@ func (m *moduleDataSourceData) FromEntity(module common.Module) {
 	}
 }
 
+func (m moduleDataSourceData) AppliesTo(module common.Module) bool {
+	if !m.ID.Null && m.ID.Value != int64(module.ID) {
+		return false
+	}
+
+	if !m.Name.Null && m.Name.Value != module.Name {
+		return false
+	}
+
+	return true
+}
+
 type moduleDataSourceType struct{}
 
 func (l moduleDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
@@ -50,12 +64,14 @@ func (l moduleDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag
 			"id": {
 				Type:                types.Int64Type,
 				MarkdownDescription: "unique identifier of the module",
+				Optional:            true,
 				Computed:            true,
 			},
 			"name": {
 				Type:                types.StringType,
 				MarkdownDescription: "name of the module",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
 			},
 			"parent": {
 				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
@@ -106,16 +122,15 @@ func (l moduleDataSource) Read(ctx context.Context, request tfsdk.ReadDataSource
 		return
 	}
 
-	var state moduleDataSourceData
-
-	for _, module := range list.Items {
-		if module.Name == config.Name.Value {
-			state.FromEntity(module)
-			diagnostics = response.State.Set(ctx, state)
-			response.Diagnostics.Append(diagnostics...)
-			return
-		}
+	module, err := filter.FindOne(config, list.Items)
+	if err != nil {
+		response.Diagnostics.AddError("Not Found", fmt.Sprintf("unable to find module: %s", err))
+		return
 	}
 
-	response.Diagnostics.AddError("Not Found", fmt.Sprintf("module %s not found", config.Name.Value))
+	var state moduleDataSourceData
+	state.FromEntity(module)
+
+	diagnostics = response.State.Set(ctx, state)
+	response.Diagnostics.Append(diagnostics...)
 }

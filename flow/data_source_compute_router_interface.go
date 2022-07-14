@@ -9,6 +9,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
@@ -30,6 +32,22 @@ func (c *computeRouterInterfaceDataSourceData) FromEntity(routerID int, routerIn
 	c.NetworkID = types.Int64{Value: int64(routerInterface.Network.ID)}
 }
 
+func (c computeRouterInterfaceDataSourceData) AppliesTo(routerInterface compute.RouterInterface) bool {
+	if !c.ID.Null && c.ID.Value != int64(routerInterface.ID) {
+		return false
+	}
+
+	if !c.NetworkID.Null && c.NetworkID.Value != int64(routerInterface.Network.ID) {
+		return false
+	}
+
+	if !c.PrivateIP.Null && c.PrivateIP.Value != routerInterface.PrivateIP {
+		return false
+	}
+
+	return true
+}
+
 type computeRouterInterfaceDataSourceType struct{}
 
 func (c computeRouterInterfaceDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
@@ -38,6 +56,7 @@ func (c computeRouterInterfaceDataSourceType) GetSchema(ctx context.Context) (tf
 			"id": {
 				Type:                types.Int64Type,
 				MarkdownDescription: "unique identifier of the router interface",
+				Optional:            true,
 				Computed:            true,
 			},
 			"router_id": {
@@ -48,11 +67,13 @@ func (c computeRouterInterfaceDataSourceType) GetSchema(ctx context.Context) (tf
 			"network_id": {
 				Type:                types.Int64Type,
 				MarkdownDescription: "unique identifier of the network",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
 			},
 			"private_ip": {
 				Type:                types.StringType,
 				MarkdownDescription: "private IP address of the router interface",
+				Optional:            true,
 				Computed:            true,
 			},
 		},
@@ -89,16 +110,15 @@ func (c computeRouterInterfaceDataSource) Read(ctx context.Context, request tfsd
 		return
 	}
 
-	for _, routerInterface := range list.Items {
-		if routerInterface.Network.ID == int(config.NetworkID.Value) {
-			var state computeRouterInterfaceDataSourceData
-			state.FromEntity(routerID, routerInterface)
-
-			diagnostics = response.State.Set(ctx, state)
-			response.Diagnostics.Append(diagnostics...)
-			return
-		}
+	routerInterface, err := filter.FindOne(config, list.Items)
+	if err != nil {
+		response.Diagnostics.AddError("Not Found", fmt.Sprintf("unable to find router interface: %s", err))
+		return
 	}
 
-	response.Diagnostics.AddError("Not Found", "requested router interface could not be found")
+	var state computeRouterInterfaceDataSourceData
+	state.FromEntity(routerID, routerInterface)
+
+	diagnostics = response.State.Set(ctx, state)
+	response.Diagnostics.Append(diagnostics...)
 }

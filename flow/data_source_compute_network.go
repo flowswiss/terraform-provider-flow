@@ -9,6 +9,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
@@ -47,6 +49,18 @@ func (c *computeNetworkDataSourceData) FromEntity(network compute.Network) {
 	for idx, domainNameServer := range network.DomainNameServers {
 		c.DomainNameServers[idx] = types.String{Value: domainNameServer}
 	}
+}
+
+func (c computeNetworkDataSourceData) AppliesTo(network compute.Network) bool {
+	if !c.ID.Null && network.ID != int(c.ID.Value) {
+		return false
+	}
+
+	if !c.Name.Null && network.Name != c.Name.Value {
+		return false
+	}
+
+	return true
 }
 
 type computeNetworkDataSourceType struct{}
@@ -131,28 +145,21 @@ func (c computeNetworkDataSource) Read(ctx context.Context, request tfsdk.ReadDa
 		return
 	}
 
-	items, err := c.networkService.List(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := c.networkService.List(ctx, goclient.Cursor{NoFilter: 1})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list networks: %s", err))
 		return
 	}
 
-	for _, network := range items.Items {
-		if !config.ID.Null && network.ID != int(config.ID.Value) {
-			continue
-		}
-
-		if !config.Name.Null && network.Name != config.Name.Value {
-			continue
-		}
-
-		var state computeNetworkDataSourceData
-		state.FromEntity(network)
-
-		diagnostics = response.State.Set(ctx, state)
-		response.Diagnostics.Append(diagnostics...)
+	network, err := filter.FindOne(config, list.Items)
+	if err != nil {
+		response.Diagnostics.AddError("Not Found", fmt.Sprintf("unable to find network: %s", err))
 		return
 	}
 
-	response.Diagnostics.AddError("Not Found", "requested network could not be found")
+	var state computeNetworkDataSourceData
+	state.FromEntity(network)
+
+	diagnostics = response.State.Set(ctx, state)
+	response.Diagnostics.Append(diagnostics...)
 }
