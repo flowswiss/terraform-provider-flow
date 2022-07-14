@@ -99,6 +99,8 @@ func (p *provider) GetDataSources(ctx context.Context) (map[string]tfsdk.DataSou
 		"flow_compute_router_route":        computeRouterRouteDataSourceType{},
 		"flow_compute_security_group":      computeSecurityGroupDataSourceType{},
 		"flow_compute_security_group_rule": computeSecurityGroupRuleDataSourceType{},
+		"flow_compute_snapshot":            computeSnapshotDataSourceType{},
+		"flow_compute_volume":              computeVolumeDataSourceType{},
 	}, nil
 }
 
