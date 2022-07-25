@@ -102,6 +102,7 @@ func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceT
 	return map[string]tfsdk.ResourceType{
 		"flow_compute_certificate":         computeCertificateResourceType{},
 		"flow_compute_key_pair":            computeKeyPairResourceType{},
+		"flow_compute_load_balancer_pool":  computeLoadBalancerPoolResourceType{},
 		"flow_compute_network":             computeNetworkResourceType{},
 		"flow_compute_router":              computeRouterResourceType{},
 		"flow_compute_router_interface":    computeRouterInterfaceResourceType{},
@@ -119,16 +120,20 @@ func (p *provider) GetDataSources(ctx context.Context) (map[string]tfsdk.DataSou
 		"flow_module":   moduleDataSourceType{},
 		"flow_location": locationDataSourceType{},
 
-		"flow_compute_certificate":         computeCertificateDataSourceType{},
-		"flow_compute_key_pair":            computeKeyPairDataSourceType{},
-		"flow_compute_network":             computeNetworkDataSourceType{},
-		"flow_compute_router":              computeRouterDataSourceType{},
-		"flow_compute_router_interface":    computeRouterInterfaceDataSourceType{},
-		"flow_compute_router_route":        computeRouterRouteDataSourceType{},
-		"flow_compute_security_group":      computeSecurityGroupDataSourceType{},
-		"flow_compute_security_group_rule": computeSecurityGroupRuleDataSourceType{},
-		"flow_compute_snapshot":            computeSnapshotDataSourceType{},
-		"flow_compute_volume":              computeVolumeDataSourceType{},
+		"flow_compute_certificate":                     computeCertificateDataSourceType{},
+		"flow_compute_key_pair":                        computeKeyPairDataSourceType{},
+		"flow_compute_load_balancer_algorithm":         computeLoadBalancerAlgorithmDataSourceType{},
+		"flow_compute_load_balancer_health_check_type": computeLoadBalancerHealthCheckTypeDataSourceType{},
+		"flow_compute_load_balancer_pool":              computeLoadBalancerPoolDataSourceType{},
+		"flow_compute_load_balancer_protocol":          computeLoadBalancerProtocolDataSourceType{},
+		"flow_compute_network":                         computeNetworkDataSourceType{},
+		"flow_compute_router":                          computeRouterDataSourceType{},
+		"flow_compute_router_interface":                computeRouterInterfaceDataSourceType{},
+		"flow_compute_router_route":                    computeRouterRouteDataSourceType{},
+		"flow_compute_security_group":                  computeSecurityGroupDataSourceType{},
+		"flow_compute_security_group_rule":             computeSecurityGroupRuleDataSourceType{},
+		"flow_compute_snapshot":                        computeSnapshotDataSourceType{},
+		"flow_compute_volume":                          computeVolumeDataSourceType{},
 	}, nil
 }
 
