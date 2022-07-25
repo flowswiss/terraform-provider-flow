@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
 	"github.com/flowswiss/goclient/compute"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -109,24 +108,16 @@ func (c computeSecurityGroupResource) Read(ctx context.Context, request tfsdk.Re
 		return
 	}
 
-	list, err := c.securityGroupService.List(ctx, goclient.Cursor{NoFilter: 1})
+	securityGroup, err := c.securityGroupService.Get(ctx, int(state.ID.Value))
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list security groups: %s", err))
 		return
 	}
 
-	securityGroupID := int(state.ID.Value)
-	for _, securityGroup := range list.Items {
-		if securityGroup.ID == securityGroupID {
-			state.FromEntity(securityGroup)
+	state.FromEntity(securityGroup)
 
-			diagnostics = response.State.Set(ctx, state)
-			response.Diagnostics.Append(diagnostics...)
-			return
-		}
-	}
-
-	response.Diagnostics.AddError("Not Found", fmt.Sprintf("security group with id %d could not be found", securityGroupID))
+	diagnostics = response.State.Set(ctx, state)
+	response.Diagnostics.Append(diagnostics...)
 }
 
 func (c computeSecurityGroupResource) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
