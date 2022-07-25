@@ -100,18 +100,19 @@ func (p *provider) Configure(ctx context.Context, request tfsdk.ConfigureProvide
 
 func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
-		"flow_compute_certificate":         computeCertificateResourceType{},
-		"flow_compute_key_pair":            computeKeyPairResourceType{},
-		"flow_compute_load_balancer_pool":  computeLoadBalancerPoolResourceType{},
-		"flow_compute_network":             computeNetworkResourceType{},
-		"flow_compute_router":              computeRouterResourceType{},
-		"flow_compute_router_interface":    computeRouterInterfaceResourceType{},
-		"flow_compute_router_route":        computeRouterRouteResourceType{},
-		"flow_compute_security_group":      computeSecurityGroupResourceType{},
-		"flow_compute_security_group_rule": computeSecurityGroupRuleResourceType{},
-		"flow_compute_snapshot":            computeSnapshotResourceType{},
-		"flow_compute_volume":              computeVolumeResourceType{},
-		"flow_compute_volume_attachment":   computeVolumeAttachmentResourceType{},
+		"flow_compute_certificate":          computeCertificateResourceType{},
+		"flow_compute_key_pair":             computeKeyPairResourceType{},
+		"flow_compute_load_balancer_member": computeLoadBalancerMemberResourceType{},
+		"flow_compute_load_balancer_pool":   computeLoadBalancerPoolResourceType{},
+		"flow_compute_network":              computeNetworkResourceType{},
+		"flow_compute_router":               computeRouterResourceType{},
+		"flow_compute_router_interface":     computeRouterInterfaceResourceType{},
+		"flow_compute_router_route":         computeRouterRouteResourceType{},
+		"flow_compute_security_group":       computeSecurityGroupResourceType{},
+		"flow_compute_security_group_rule":  computeSecurityGroupRuleResourceType{},
+		"flow_compute_snapshot":             computeSnapshotResourceType{},
+		"flow_compute_volume":               computeVolumeResourceType{},
+		"flow_compute_volume_attachment":    computeVolumeAttachmentResourceType{},
 	}, nil
 }
 
@@ -124,6 +125,7 @@ func (p *provider) GetDataSources(ctx context.Context) (map[string]tfsdk.DataSou
 		"flow_compute_key_pair":                        computeKeyPairDataSourceType{},
 		"flow_compute_load_balancer_algorithm":         computeLoadBalancerAlgorithmDataSourceType{},
 		"flow_compute_load_balancer_health_check_type": computeLoadBalancerHealthCheckTypeDataSourceType{},
+		"flow_compute_load_balancer_member":            computeLoadBalancerMemberDataSourceType{},
 		"flow_compute_load_balancer_pool":              computeLoadBalancerPoolDataSourceType{},
 		"flow_compute_load_balancer_protocol":          computeLoadBalancerProtocolDataSourceType{},
 		"flow_compute_network":                         computeNetworkDataSourceType{},
@@ -170,7 +172,7 @@ func waitForCondition(ctx context.Context, check func(ctx context.Context) (bool
 			return
 		}
 
-		done, d := check(ctx)
+		done, d = check(ctx)
 		diagnostics.Append(d...)
 		if done || diagnostics.HasError() {
 			return
