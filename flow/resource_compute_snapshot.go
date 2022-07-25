@@ -6,9 +6,9 @@ import (
 
 	"github.com/flowswiss/goclient/compute"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
@@ -207,7 +207,7 @@ func (r computeSnapshotResource) Delete(ctx context.Context, request tfsdk.Delet
 }
 
 func (r computeSnapshotResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
-	tfsdk.ResourceImportStatePassthroughID(ctx, tftypes.NewAttributePath().WithAttributeName("id"), request, response)
+	tfsdk.ResourceImportStatePassthroughID(ctx, path.Root("id"), request, response)
 }
 
 func (r computeSnapshotResource) waitForSnapshotStatus(ctx context.Context, snapshotID int) (done bool, diagnostics diag.Diagnostics) {

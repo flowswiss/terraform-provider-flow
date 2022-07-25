@@ -7,9 +7,9 @@ import (
 	"github.com/flowswiss/goclient"
 	"github.com/flowswiss/goclient/compute"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
 
 var (
@@ -159,5 +159,5 @@ func (c computeKeyPairResource) Delete(ctx context.Context, request tfsdk.Delete
 }
 
 func (c computeKeyPairResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
-	tfsdk.ResourceImportStatePassthroughID(ctx, tftypes.NewAttributePath().WithAttributeName("id"), request, response)
+	tfsdk.ResourceImportStatePassthroughID(ctx, path.Root("id"), request, response)
 }

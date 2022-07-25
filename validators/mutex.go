@@ -6,20 +6,20 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
-	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
 
 var _ tfsdk.ResourceConfigValidator = (*mutuallyExclusiveValidator)(nil)
 
 type mutuallyExclusiveValidator struct {
-	attributes []*tftypes.AttributePath
+	attributes []path.Path
 }
 
 func MutuallyExclusive(attributes ...string) tfsdk.ResourceConfigValidator {
-	attributePaths := make([]*tftypes.AttributePath, len(attributes))
+	attributePaths := make([]path.Path, len(attributes))
 	for i, attribute := range attributes {
-		attributePaths[i] = tftypes.NewAttributePath().WithAttributeName(attribute)
+		attributePaths[i] = path.Root(attribute)
 	}
 
 	return mutuallyExclusiveValidator{attributes: attributePaths}
@@ -38,8 +38,8 @@ func (m mutuallyExclusiveValidator) MarkdownDescription(ctx context.Context) str
 	return m.Description(ctx)
 }
 
-func (m mutuallyExclusiveValidator) Validate(ctx context.Context, request tfsdk.ValidateResourceConfigRequest, response *tfsdk.ValidateResourceConfigResponse) {
-	var previousAttributePath *tftypes.AttributePath = nil
+func (m mutuallyExclusiveValidator) ValidateResource(ctx context.Context, request tfsdk.ValidateResourceConfigRequest, response *tfsdk.ValidateResourceConfigResponse) {
+	previousAttributePath := path.Empty()
 
 	for _, attribute := range m.attributes {
 		var value attr.Value
@@ -54,7 +54,7 @@ func (m mutuallyExclusiveValidator) Validate(ctx context.Context, request tfsdk.
 			continue
 		}
 
-		if previousAttributePath != nil {
+		if !previousAttributePath.Equal(path.Empty()) {
 			response.Diagnostics.AddAttributeError(
 				attribute,
 				"Mutually Exclusive Attribute Error",

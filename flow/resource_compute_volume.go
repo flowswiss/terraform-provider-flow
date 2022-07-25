@@ -7,9 +7,9 @@ import (
 	"github.com/flowswiss/goclient/compute"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
@@ -69,7 +69,7 @@ func (t computeVolumeResourceType) GetSchema(ctx context.Context) (tfsdk.Schema,
 				Required:            true,
 				PlanModifiers: tfsdk.AttributePlanModifiers{
 					// TODO not sure whether this should trigger a recreate since the data on the volume will be lost
-					tfsdk.RequiresReplaceIf(func(ctx context.Context, state, config attr.Value, path *tftypes.AttributePath) (bool, diag.Diagnostics) {
+					tfsdk.RequiresReplaceIf(func(ctx context.Context, state, config attr.Value, path path.Path) (bool, diag.Diagnostics) {
 						return state.(types.Int64).Value > config.(types.Int64).Value, nil
 					}, "", "volume size cannot be decreased"),
 				},
@@ -252,7 +252,7 @@ func (r computeVolumeResource) Delete(ctx context.Context, request tfsdk.DeleteR
 }
 
 func (r computeVolumeResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
-	tfsdk.ResourceImportStatePassthroughID(ctx, tftypes.NewAttributePath().WithAttributeName("id"), request, response)
+	tfsdk.ResourceImportStatePassthroughID(ctx, path.Root("id"), request, response)
 }
 
 func (r computeVolumeResource) waitForVolumeStatus(ctx context.Context, volumeID int) (done bool, diagnostics diag.Diagnostics) {
