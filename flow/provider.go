@@ -116,6 +116,8 @@ func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceT
 		"flow_compute_snapshot":                     computeSnapshotResourceType{},
 		"flow_compute_volume":                       computeVolumeResourceType{},
 		"flow_compute_volume_attachment":            computeVolumeAttachmentResourceType{},
+
+		"flow_mac_bare_metal_elastic_ip": macBareMetalElasticIPResourceType{},
 	}, nil
 }
 

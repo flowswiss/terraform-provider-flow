@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
+	"github.com/flowswiss/goclient/macbaremetal"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -14,26 +14,26 @@ import (
 )
 
 var (
-	_ tfsdk.ResourceType            = (*computeElasticIPResourceType)(nil)
-	_ tfsdk.Resource                = (*computeElasticIPResource)(nil)
-	_ tfsdk.ResourceWithImportState = (*computeElasticIPResource)(nil)
+	_ tfsdk.ResourceType            = (*macBareMetalElasticIPResourceType)(nil)
+	_ tfsdk.Resource                = (*macBareMetalElasticIPResource)(nil)
+	_ tfsdk.ResourceWithImportState = (*macBareMetalElasticIPResource)(nil)
 )
 
-type computeElasticIPResourceData struct {
+type macBareMetalElasticIPResourceData struct {
 	ID         types.Int64  `tfsdk:"id"`
 	LocationID types.Int64  `tfsdk:"location_id"`
 	PublicIP   types.String `tfsdk:"public_ip"`
 }
 
-func (c *computeElasticIPResourceData) FromEntity(elasticIP compute.ElasticIP) {
-	c.ID = types.Int64{Value: int64(elasticIP.ID)}
-	c.LocationID = types.Int64{Value: int64(elasticIP.Location.ID)}
-	c.PublicIP = types.String{Value: elasticIP.PublicIP}
+func (r *macBareMetalElasticIPResourceData) FromEntity(elasticIP macbaremetal.ElasticIP) {
+	r.ID = types.Int64{Value: int64(elasticIP.ID)}
+	r.LocationID = types.Int64{Value: int64(elasticIP.Location.ID)}
+	r.PublicIP = types.String{Value: elasticIP.PublicIP}
 }
 
-type computeElasticIPResourceType struct{}
+type macBareMetalElasticIPResourceType struct{}
 
-func (c computeElasticIPResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
+func (r macBareMetalElasticIPResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
 			"id": {
@@ -61,34 +61,34 @@ func (c computeElasticIPResourceType) GetSchema(ctx context.Context) (tfsdk.Sche
 	}, nil
 }
 
-func (c computeElasticIPResourceType) NewResource(ctx context.Context, p tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
+func (r macBareMetalElasticIPResourceType) NewResource(ctx context.Context, p tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
 	prov, diagnostics := convertToLocalProviderType(p)
 	if diagnostics.HasError() {
 		return nil, diagnostics
 	}
 
-	return computeElasticIPResource{
-		elasticIPService: compute.NewElasticIPService(prov.client),
+	return macBareMetalElasticIPResource{
+		elasticIPService: macbaremetal.NewElasticIPService(prov.client),
 	}, diagnostics
 }
 
-type computeElasticIPResource struct {
-	elasticIPService compute.ElasticIPService
+type macBareMetalElasticIPResource struct {
+	elasticIPService macbaremetal.ElasticIPService
 }
 
-func (c computeElasticIPResource) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
-	var config computeElasticIPResourceData
+func (r macBareMetalElasticIPResource) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
+	var config macBareMetalElasticIPResourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
 	if response.Diagnostics.HasError() {
 		return
 	}
 
-	create := compute.ElasticIPCreate{
+	create := macbaremetal.ElasticIPCreate{
 		LocationID: int(config.LocationID.Value),
 	}
 
-	elasticIP, err := c.elasticIPService.Create(ctx, create)
+	elasticIP, err := r.elasticIPService.Create(ctx, create)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to create elastic ip: %s", err))
 		return
@@ -99,22 +99,22 @@ func (c computeElasticIPResource) Create(ctx context.Context, request tfsdk.Crea
 		"data": elasticIP,
 	})
 
-	var state computeElasticIPResourceData
+	var state macBareMetalElasticIPResourceData
 	state.FromEntity(elasticIP)
 
 	diagnostics = response.State.Set(ctx, state)
 	response.Diagnostics.Append(diagnostics...)
 }
 
-func (c computeElasticIPResource) Read(ctx context.Context, request tfsdk.ReadResourceRequest, response *tfsdk.ReadResourceResponse) {
-	var state computeElasticIPResourceData
+func (r macBareMetalElasticIPResource) Read(ctx context.Context, request tfsdk.ReadResourceRequest, response *tfsdk.ReadResourceResponse) {
+	var state macBareMetalElasticIPResourceData
 	diagnostics := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diagnostics...)
 	if response.Diagnostics.HasError() {
 		return
 	}
 
-	elasticIP, diagnostics := findComputeElasticIP(ctx, c.elasticIPService, int(state.ID.Value))
+	elasticIP, diagnostics := findMacBareMetalElasticIP(ctx, r.elasticIPService, int(state.ID.Value))
 	response.Diagnostics.Append(diagnostics...)
 	if response.Diagnostics.HasError() {
 		return
@@ -126,19 +126,19 @@ func (c computeElasticIPResource) Read(ctx context.Context, request tfsdk.ReadRe
 	response.Diagnostics.Append(diagnostics...)
 }
 
-func (c computeElasticIPResource) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
+func (r macBareMetalElasticIPResource) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
 	response.Diagnostics.AddError("Not Supported", "updating an elastic ip is not supported")
 }
 
-func (c computeElasticIPResource) Delete(ctx context.Context, request tfsdk.DeleteResourceRequest, response *tfsdk.DeleteResourceResponse) {
-	var state computeElasticIPResourceData
+func (r macBareMetalElasticIPResource) Delete(ctx context.Context, request tfsdk.DeleteResourceRequest, response *tfsdk.DeleteResourceResponse) {
+	var state macBareMetalElasticIPResourceData
 	diagnostics := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diagnostics...)
 	if response.Diagnostics.HasError() {
 		return
 	}
 
-	err := c.elasticIPService.Delete(ctx, int(state.ID.Value))
+	err := r.elasticIPService.Delete(ctx, int(state.ID.Value))
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete elastic ip: %s", err))
 		return
@@ -149,11 +149,11 @@ func (c computeElasticIPResource) Delete(ctx context.Context, request tfsdk.Dele
 	})
 }
 
-func (c computeElasticIPResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
+func (r macBareMetalElasticIPResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
 	tfsdk.ResourceImportStatePassthroughID(ctx, path.Root("id"), request, response)
 }
 
-func findComputeElasticIP(ctx context.Context, service compute.ElasticIPService, id int) (elasticIP compute.ElasticIP, diagnostics diag.Diagnostics) {
+func findMacBareMetalElasticIP(ctx context.Context, service macbaremetal.ElasticIPService, id int) (elasticIP macbaremetal.ElasticIP, diagnostics diag.Diagnostics) {
 	list, err := service.List(ctx, goclient.Cursor{NoFilter: 1})
 	if err != nil {
 		diagnostics.AddError("Client Error", fmt.Sprintf("unable to list elastic ips: %s", err))

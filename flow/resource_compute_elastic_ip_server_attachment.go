@@ -137,7 +137,7 @@ func (c computeElasticIPServerAttachmentResource) Read(ctx context.Context, requ
 		return
 	}
 
-	elasticIP, diagnostics := findElasticIP(ctx, c.elasticIPService, int(state.ElasticIPID.Value))
+	elasticIP, diagnostics := findComputeElasticIP(ctx, c.elasticIPService, int(state.ElasticIPID.Value))
 	response.Diagnostics.Append(diagnostics...)
 	if response.Diagnostics.HasError() {
 		return
