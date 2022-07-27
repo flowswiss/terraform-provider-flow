@@ -119,6 +119,8 @@ func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceT
 
 		"flow_mac_bare_metal_elastic_ip":          macBareMetalElasticIPResourceType{},
 		"flow_mac_bare_metal_network":             macBareMetalNetworkResourceType{},
+		"flow_mac_bare_metal_security_group":      macBareMetalSecurityGroupResourceType{},
+		"flow_mac_bare_metal_security_group_rule": macBareMetalSecurityGroupRuleResourceType{},
 	}, nil
 }
 
@@ -147,6 +149,8 @@ func (p *provider) GetDataSources(ctx context.Context) (map[string]tfsdk.DataSou
 
 		"flow_mac_bare_metal_elastic_ip":          macBareMetalElasticIPDataSourceType{},
 		"flow_mac_bare_metal_network":             macBareMetalNetworkDataSourceType{},
+		"flow_mac_bare_metal_security_group":      macBareMetalSecurityGroupDataSourceType{},
+		"flow_mac_bare_metal_security_group_rule": macBareMetalSecurityGroupRuleDataSourceType{},
 	}, nil
 }
 
