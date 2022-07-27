@@ -117,7 +117,8 @@ func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceT
 		"flow_compute_volume":                       computeVolumeResourceType{},
 		"flow_compute_volume_attachment":            computeVolumeAttachmentResourceType{},
 
-		"flow_mac_bare_metal_elastic_ip": macBareMetalElasticIPResourceType{},
+		"flow_mac_bare_metal_elastic_ip":          macBareMetalElasticIPResourceType{},
+		"flow_mac_bare_metal_network":             macBareMetalNetworkResourceType{},
 	}, nil
 }
 
@@ -143,6 +144,9 @@ func (p *provider) GetDataSources(ctx context.Context) (map[string]tfsdk.DataSou
 		"flow_compute_security_group_rule":             computeSecurityGroupRuleDataSourceType{},
 		"flow_compute_snapshot":                        computeSnapshotDataSourceType{},
 		"flow_compute_volume":                          computeVolumeDataSourceType{},
+
+		"flow_mac_bare_metal_elastic_ip":          macBareMetalElasticIPDataSourceType{},
+		"flow_mac_bare_metal_network":             macBareMetalNetworkDataSourceType{},
 	}, nil
 }
 
