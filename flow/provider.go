@@ -121,6 +121,8 @@ func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceT
 		"flow_mac_bare_metal_network":             macBareMetalNetworkResourceType{},
 		"flow_mac_bare_metal_security_group":      macBareMetalSecurityGroupResourceType{},
 		"flow_mac_bare_metal_security_group_rule": macBareMetalSecurityGroupRuleResourceType{},
+
+		"flow_kubernetes_cluster": kubernetesClusterResourceType{},
 	}, nil
 }
 
@@ -151,6 +153,9 @@ func (p *provider) GetDataSources(ctx context.Context) (map[string]tfsdk.DataSou
 		"flow_mac_bare_metal_network":             macBareMetalNetworkDataSourceType{},
 		"flow_mac_bare_metal_security_group":      macBareMetalSecurityGroupDataSourceType{},
 		"flow_mac_bare_metal_security_group_rule": macBareMetalSecurityGroupRuleDataSourceType{},
+
+		"flow_kubernetes_cluster":     kubernetesClusterDataSourceType{},
+		"flow_kubernetes_kube_config": kubernetesKubeConfigDataSourceType{},
 	}, nil
 }
 
