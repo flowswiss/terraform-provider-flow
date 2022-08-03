@@ -16,16 +16,37 @@ import (
 
 var _ tfsdk.Provider = (*provider)(nil)
 
-var (
-	version         = "dev"
-	defaultEndpoint = "https://api.flow.swiss/"
-)
+type Option func(p *provider)
 
-func New() tfsdk.Provider {
-	return &provider{}
+func WithVersion(version string) Option {
+	return func(p *provider) {
+		p.version = version
+	}
+}
+
+func WithDefaultEndpoint(endpoint string) Option {
+	return func(p *provider) {
+		p.defaultEndpoint = endpoint
+	}
+}
+
+func New(opts ...Option) tfsdk.Provider {
+	p := &provider{
+		version:         "dev",
+		defaultEndpoint: "https://api.flow.swiss/",
+	}
+
+	for _, opt := range opts {
+		opt(p)
+	}
+
+	return p
 }
 
 type provider struct {
+	version         string
+	defaultEndpoint string
+
 	client     goclient.Client
 	configured bool
 }
@@ -78,7 +99,7 @@ func (p *provider) Configure(ctx context.Context, request tfsdk.ConfigureProvide
 	}
 
 	if data.Endpoint.Null {
-		data.Endpoint = types.String{Value: defaultEndpoint}
+		data.Endpoint = types.String{Value: p.defaultEndpoint}
 
 		if val, ok := os.LookupEnv("FLOW_ENDPOINT"); ok {
 			data.Endpoint = types.String{Value: val}
@@ -88,7 +109,7 @@ func (p *provider) Configure(ctx context.Context, request tfsdk.ConfigureProvide
 	p.client = goclient.NewClient(
 		goclient.WithToken(data.Token.Value),
 		goclient.WithBase(data.Endpoint.Value),
-		goclient.WithUserAgent(fmt.Sprintf("terraform-provider-flow/%s", version)),
+		goclient.WithUserAgent(fmt.Sprintf("terraform-provider-flow/%s", p.version)),
 
 		goclient.WithHTTPClientOption(func(c *http.Client) {
 			c.Transport = logTransport{base: c.Transport}

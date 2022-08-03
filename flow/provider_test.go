@@ -6,9 +6,7 @@ import (
 )
 
 var protoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServer, error){
-	"flow": providerserver.NewProtocol6WithError(New()),
-}
-
-func init() {
-	version = "test"
+	"flow": providerserver.NewProtocol6WithError(New(
+		WithVersion("test"),
+	)),
 }
