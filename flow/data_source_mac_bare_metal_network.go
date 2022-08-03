@@ -88,6 +88,7 @@ func (c macBareMetalNetworkDataSourceType) GetSchema(ctx context.Context) (tfsdk
 			"location_id": {
 				Type:                types.Int64Type,
 				MarkdownDescription: "unique identifier of the location",
+				Optional:            true,
 				Computed:            true,
 			},
 			"domain_name_servers": {

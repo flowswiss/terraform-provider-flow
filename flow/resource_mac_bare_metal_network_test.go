@@ -9,6 +9,8 @@ import (
 )
 
 func TestAccMacBareMetalNetwork_Basic(t *testing.T) {
+	t.Skip("api does currently not allow creating multiple mac bare metal networks. enable this once it is allowed")
+
 	networkName := acctest.RandomWithPrefix("test-network")
 	domainName := "example.com"
 	domainNameServer := "1.1.2.2"

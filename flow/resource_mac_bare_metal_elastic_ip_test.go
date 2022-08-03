@@ -15,7 +15,7 @@ func TestAccMacBareMetalElasticIP_Basic(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("flow_mac_bare_metal_elastic_ip.foobar", "id"),
 					resource.TestCheckResourceAttrSet("flow_mac_bare_metal_elastic_ip.foobar", "public_ip"),
-					resource.TestCheckResourceAttr("flow_mac_bare_metal_elastic_ip.foobar", "location_id", "1"),
+					resource.TestCheckResourceAttr("flow_mac_bare_metal_elastic_ip.foobar", "location_id", "2"),
 				),
 			},
 		},
