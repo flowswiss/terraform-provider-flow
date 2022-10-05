@@ -134,6 +134,7 @@ func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceT
 		"flow_compute_router_route":                 computeRouterRouteResourceType{},
 		"flow_compute_security_group":               computeSecurityGroupResourceType{},
 		"flow_compute_security_group_rule":          computeSecurityGroupRuleResourceType{},
+		"flow_compute_server":                       computeServerResourceType{},
 		"flow_compute_snapshot":                     computeSnapshotResourceType{},
 		"flow_compute_volume":                       computeVolumeResourceType{},
 		"flow_compute_volume_attachment":            computeVolumeAttachmentResourceType{},
@@ -149,11 +150,13 @@ func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceT
 
 func (p *provider) GetDataSources(ctx context.Context) (map[string]tfsdk.DataSourceType, diag.Diagnostics) {
 	return map[string]tfsdk.DataSourceType{
-		"flow_module":   moduleDataSourceType{},
 		"flow_location": locationDataSourceType{},
+		"flow_module":   moduleDataSourceType{},
+		"flow_product":  productDataSourceType{},
 
 		"flow_compute_certificate":                     computeCertificateDataSourceType{},
 		"flow_compute_elastic_ip":                      computeElasticIPDataSourceType{},
+		"flow_compute_image":                           computeImageDataSourceType{},
 		"flow_compute_key_pair":                        computeKeyPairDataSourceType{},
 		"flow_compute_load_balancer_algorithm":         computeLoadBalancerAlgorithmDataSourceType{},
 		"flow_compute_load_balancer_health_check_type": computeLoadBalancerHealthCheckTypeDataSourceType{},
@@ -167,6 +170,7 @@ func (p *provider) GetDataSources(ctx context.Context) (map[string]tfsdk.DataSou
 		"flow_compute_router_route":                    computeRouterRouteDataSourceType{},
 		"flow_compute_security_group":                  computeSecurityGroupDataSourceType{},
 		"flow_compute_security_group_rule":             computeSecurityGroupRuleDataSourceType{},
+		"flow_compute_server":                          computeServerDataSourceType{},
 		"flow_compute_snapshot":                        computeSnapshotDataSourceType{},
 		"flow_compute_volume":                          computeVolumeDataSourceType{},
 

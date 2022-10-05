@@ -3,7 +3,7 @@ module github.com/flowswiss/terraform-provider-flow
 go 1.18
 
 require (
-	github.com/flowswiss/goclient v0.2.5
+	github.com/flowswiss/goclient v0.2.6
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/terraform-plugin-docs v0.13.0
 	github.com/hashicorp/terraform-plugin-framework v0.10.0
