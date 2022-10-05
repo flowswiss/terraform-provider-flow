@@ -3,9 +3,8 @@ package flow
 import (
 	"context"
 	"fmt"
-	"github.com/flowswiss/goclient"
+
 	"github.com/flowswiss/goclient/common"
-	"github.com/flowswiss/terraform-provider-flow/filter"
 	"github.com/google/uuid"
 
 	"github.com/flowswiss/goclient/kubernetes"
@@ -209,34 +208,15 @@ func (k kubernetesClusterResource) Create(ctx context.Context, request tfsdk.Cre
 		return
 	}
 
-	err = k.orderService.WaitForCompletion(ctx, ordering)
+	order, err := k.orderService.WaitUntilProcessed(ctx, ordering)
 	if err != nil {
-		response.Diagnostics.AddError("Client Error", fmt.Sprintf("error while waiting for cluster creation: %s", err))
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for cluster creation: %s", err))
 		return
 	}
 
-	// find cluster by name
-	clusters, err := k.clusterService.List(ctx, goclient.Cursor{NoFilter: 1})
+	cluster, err := k.clusterService.Get(ctx, order.Product.ID)
 	if err != nil {
-		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list clusters: %s", err))
-		return
-	}
-
-	nameFilter := kubernetesClusterNameFilter{Name: uniqueName}
-	cluster, err := filter.FindOne(nameFilter, clusters.Items)
-	if err != nil {
-		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to find cluster: %s", err))
-		return
-	}
-
-	// update name to the actual provided name
-	update := kubernetes.ClusterUpdate{
-		Name: config.Name.Value,
-	}
-
-	cluster, err = k.clusterService.Update(ctx, cluster.ID, update)
-	if err != nil {
-		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to update cluster: %s", err))
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get cluster: %s", err))
 		return
 	}
 
