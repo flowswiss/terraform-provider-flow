@@ -125,6 +125,7 @@ func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceT
 		"flow_compute_elastic_ip":                   computeElasticIPResourceType{},
 		"flow_compute_elastic_ip_server_attachment": computeElasticIPServerAttachmentResourceType{},
 		"flow_compute_key_pair":                     computeKeyPairResourceType{},
+		"flow_compute_load_balancer":                computeLoadBalancerResourceType{},
 		"flow_compute_load_balancer_member":         computeLoadBalancerMemberResourceType{},
 		"flow_compute_load_balancer_pool":           computeLoadBalancerPoolResourceType{},
 		"flow_compute_network":                      computeNetworkResourceType{},
@@ -139,12 +140,13 @@ func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceT
 		"flow_compute_volume":                       computeVolumeResourceType{},
 		"flow_compute_volume_attachment":            computeVolumeAttachmentResourceType{},
 
+		"flow_kubernetes_cluster": kubernetesClusterResourceType{},
+
+		"flow_mac_bare_metal_device":              macBareMetalDeviceResourceType{},
 		"flow_mac_bare_metal_elastic_ip":          macBareMetalElasticIPResourceType{},
 		"flow_mac_bare_metal_network":             macBareMetalNetworkResourceType{},
 		"flow_mac_bare_metal_security_group":      macBareMetalSecurityGroupResourceType{},
 		"flow_mac_bare_metal_security_group_rule": macBareMetalSecurityGroupRuleResourceType{},
-
-		"flow_kubernetes_cluster": kubernetesClusterResourceType{},
 	}, nil
 }
 
@@ -174,13 +176,13 @@ func (p *provider) GetDataSources(ctx context.Context) (map[string]tfsdk.DataSou
 		"flow_compute_snapshot":                        computeSnapshotDataSourceType{},
 		"flow_compute_volume":                          computeVolumeDataSourceType{},
 
+		"flow_kubernetes_cluster":     kubernetesClusterDataSourceType{},
+		"flow_kubernetes_kube_config": kubernetesKubeConfigDataSourceType{},
+
 		"flow_mac_bare_metal_elastic_ip":          macBareMetalElasticIPDataSourceType{},
 		"flow_mac_bare_metal_network":             macBareMetalNetworkDataSourceType{},
 		"flow_mac_bare_metal_security_group":      macBareMetalSecurityGroupDataSourceType{},
 		"flow_mac_bare_metal_security_group_rule": macBareMetalSecurityGroupRuleDataSourceType{},
-
-		"flow_kubernetes_cluster":     kubernetesClusterDataSourceType{},
-		"flow_kubernetes_kube_config": kubernetesKubeConfigDataSourceType{},
 	}, nil
 }
 
