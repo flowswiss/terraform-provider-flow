@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"github.com/flowswiss/goclient/common"
-	"github.com/google/uuid"
-
 	"github.com/flowswiss/goclient/kubernetes"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -185,10 +183,8 @@ func (k kubernetesClusterResource) Create(ctx context.Context, request tfsdk.Cre
 		return
 	}
 
-	uniqueName := fmt.Sprintf("terraform-%s", uuid.NewString())
-
 	create := kubernetes.ClusterCreate{
-		Name:       uniqueName,
+		Name:       config.Name.Value,
 		LocationID: int(config.LocationID.Value),
 		NetworkID:  int(config.NetworkID.Value),
 		Worker: kubernetes.ClusterWorkerCreate{
