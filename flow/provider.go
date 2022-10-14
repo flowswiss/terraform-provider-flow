@@ -136,7 +136,6 @@ func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceT
 		"flow_compute_security_group":               computeSecurityGroupResourceType{},
 		"flow_compute_security_group_rule":          computeSecurityGroupRuleResourceType{},
 		"flow_compute_server":                       computeServerResourceType{},
-		"flow_compute_snapshot":                     computeSnapshotResourceType{},
 		"flow_compute_volume":                       computeVolumeResourceType{},
 		"flow_compute_volume_attachment":            computeVolumeAttachmentResourceType{},
 
