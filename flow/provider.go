@@ -141,11 +141,12 @@ func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceT
 
 		"flow_kubernetes_cluster": kubernetesClusterResourceType{},
 
-		"flow_mac_bare_metal_device":              macBareMetalDeviceResourceType{},
-		"flow_mac_bare_metal_elastic_ip":          macBareMetalElasticIPResourceType{},
-		"flow_mac_bare_metal_network":             macBareMetalNetworkResourceType{},
-		"flow_mac_bare_metal_security_group":      macBareMetalSecurityGroupResourceType{},
-		"flow_mac_bare_metal_security_group_rule": macBareMetalSecurityGroupRuleResourceType{},
+		"flow_mac_bare_metal_device":                macBareMetalDeviceResourceType{},
+		"flow_mac_bare_metal_elastic_ip":            macBareMetalElasticIPResourceType{},
+		"flow_mac_bare_metal_elastic_ip_attachment": macBareMetalElasticIPDeviceAttachmentResourceType{},
+		"flow_mac_bare_metal_network":               macBareMetalNetworkResourceType{},
+		"flow_mac_bare_metal_security_group":        macBareMetalSecurityGroupResourceType{},
+		"flow_mac_bare_metal_security_group_rule":   macBareMetalSecurityGroupRuleResourceType{},
 	}, nil
 }
 

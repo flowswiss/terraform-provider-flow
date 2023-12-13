@@ -19,12 +19,13 @@ var (
 )
 
 type macBareMetalDeviceResourceData struct {
-	ID         types.Int64  `tfsdk:"id"`
-	Name       types.String `tfsdk:"name"`
-	LocationID types.Int64  `tfsdk:"location_id"`
-	ProductID  types.Int64  `tfsdk:"product_id"`
-	NetworkID  types.Int64  `tfsdk:"network_id"`
-	Password   types.String `tfsdk:"password"`
+	ID                 types.Int64  `tfsdk:"id"`
+	Name               types.String `tfsdk:"name"`
+	LocationID         types.Int64  `tfsdk:"location_id"`
+	ProductID          types.Int64  `tfsdk:"product_id"`
+	NetworkID          types.Int64  `tfsdk:"network_id"`
+	NetworkInterfaceID types.Int64  `tfsdk:"network_interface_id"`
+	Password           types.String `tfsdk:"password"`
 }
 
 func (m *macBareMetalDeviceResourceData) FromEntity(device macbaremetal.Device) {
@@ -33,6 +34,10 @@ func (m *macBareMetalDeviceResourceData) FromEntity(device macbaremetal.Device) 
 	m.LocationID = types.Int64{Value: int64(device.Location.ID)}
 	m.ProductID = types.Int64{Value: int64(device.Product.ID)}
 	m.NetworkID = types.Int64{Value: int64(device.Network.ID)}
+
+	if len(device.NetworkInterfaces) > 0 {
+		m.NetworkInterfaceID = types.Int64{Value: int64(device.NetworkInterfaces[0].ID)}
+	}
 }
 
 type macBareMetalDeviceResourceType struct{}
@@ -68,6 +73,14 @@ func (m macBareMetalDeviceResourceType) GetSchema(ctx context.Context) (tfsdk.Sc
 				PlanModifiers: tfsdk.AttributePlanModifiers{
 					tfsdk.UseStateForUnknown(),
 					tfsdk.RequiresReplace(),
+				},
+			},
+			"network_interface_id": {
+				Type:                types.Int64Type,
+				MarkdownDescription: "unique identifier of the network interface",
+				Computed:            true,
+				PlanModifiers: tfsdk.AttributePlanModifiers{
+					tfsdk.UseStateForUnknown(),
 				},
 			},
 			"product_id": {
