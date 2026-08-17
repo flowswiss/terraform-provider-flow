@@ -24,5 +24,3 @@ description: |-
 - `id` (Number) unique identifier of the router interface
 - `network_id` (Number) unique identifier of the network
 - `private_ip` (String) private IP address of the router interface
-
-

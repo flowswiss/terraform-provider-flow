@@ -26,5 +26,3 @@ description: |-
 - `id` (Number) unique identifier of the load balancer member
 - `name` (String) name of the load balancer member
 - `port` (Number) port of the load balancer member
-
-

@@ -38,5 +38,3 @@ Required:
 
 - `end` (String) end of the allocation pool
 - `start` (String) start of the allocation pool
-
-

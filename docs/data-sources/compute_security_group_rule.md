@@ -54,5 +54,3 @@ Read-Only:
 
 - `name` (String) protocol name of the security group rule
 - `number` (Number) iana protocol number of the security group rule
-
-

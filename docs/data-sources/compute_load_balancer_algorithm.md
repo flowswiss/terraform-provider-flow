@@ -20,5 +20,3 @@ description: |-
 - `id` (Number) unique identifier of the load balancer algorithm
 - `key` (String) unique key of the load balancer algorithm
 - `name` (String) name of the load balancer algorithm
-
-

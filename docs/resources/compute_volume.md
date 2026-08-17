@@ -29,5 +29,3 @@ description: |-
 
 - `id` (Number) unique identifier of the volume
 - `serial_number` (String) unique serial number of the volume
-
-

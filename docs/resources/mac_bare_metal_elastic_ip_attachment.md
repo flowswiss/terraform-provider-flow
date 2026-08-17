@@ -20,5 +20,3 @@ description: |-
 - `device_id` (Number) unique identifier of the device to attach the elastic ip to
 - `elastic_ip_id` (Number) unique identifier of the elastic ip to attach to the device
 - `network_interface_id` (Number) unique identifier of the network interface of the device to attach the elastic ip to
-
-

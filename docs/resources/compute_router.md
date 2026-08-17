@@ -28,5 +28,3 @@ description: |-
 
 - `id` (Number) unique identifier of the router
 - `public_ip` (String) public IP of the router
-
-

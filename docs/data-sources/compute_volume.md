@@ -25,5 +25,3 @@ description: |-
 ### Read-Only
 
 - `size` (Number) size in GiB of the volume
-
-

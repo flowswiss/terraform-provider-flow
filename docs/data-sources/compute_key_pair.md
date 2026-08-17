@@ -20,5 +20,3 @@ description: |-
 - `fingerprint` (String) fingerprint of the key pair
 - `id` (Number) unique identifier of the key pair
 - `name` (String) name of the key pair
-
-

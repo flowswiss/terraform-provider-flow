@@ -23,5 +23,3 @@ description: |-
 
 - `id` (Number) unique identifier of the elastic ip
 - `public_ip` (String) public ip address
-
-

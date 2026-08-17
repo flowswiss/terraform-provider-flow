@@ -20,5 +20,3 @@ description: |-
 - `elastic_ip_id` (Number) unique identifier of the elastic ip to attach to the server
 - `network_interface_id` (Number) unique identifier of the network interface of the server to attach the elastic ip to
 - `server_id` (Number) unique identifier of the server to attach the elastic ip to
-
-

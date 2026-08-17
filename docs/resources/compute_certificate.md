@@ -62,5 +62,3 @@ Read-Only:
 - `organization` (String) organization of the certificate (O)
 - `organizational_unit` (String) organizational unit of the certificate (OU)
 - `province` (String) province of the certificate (S)
-
-

@@ -20,5 +20,3 @@ description: |-
 - `id` (Number) unique identifier of the elastic ip
 - `location_id` (Number) location of the elastic ip
 - `public_ip` (String) public ip address
-
-

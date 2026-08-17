@@ -20,5 +20,3 @@ description: |-
 - `id` (Number) unique identifier of the security group
 - `name` (String) name of the security group
 - `network_id` (Number) unique identifier of the network
-
-

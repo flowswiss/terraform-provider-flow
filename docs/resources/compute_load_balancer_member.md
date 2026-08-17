@@ -26,5 +26,3 @@ description: |-
 ### Read-Only
 
 - `id` (Number) unique identifier of the load balancer member
-
-

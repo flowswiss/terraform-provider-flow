@@ -24,5 +24,3 @@ description: |-
 - `destination` (String) IP destination range of the route
 - `id` (Number) unique identifier of the route
 - `next_hop` (String) IP address of the next hop
-
-

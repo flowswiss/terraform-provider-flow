@@ -23,5 +23,3 @@ description: |-
 - `location_id` (Number) unique identifier of the location
 - `name` (String) name of the server
 - `product_id` (Number) unique identifier of the product
-
-

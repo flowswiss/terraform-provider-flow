@@ -19,5 +19,3 @@ description: |-
 
 - `server_id` (Number) identifier of the server for the attachment
 - `volume_id` (Number) identifier of the volume for the attachment
-
-

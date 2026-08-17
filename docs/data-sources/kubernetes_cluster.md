@@ -30,5 +30,3 @@ description: |-
 - `node_count` (Number) number of nodes in the cluster
 - `node_product_id` (Number) unique identifier of the node product
 - `version_id` (Number) unique identifier of the kubernetes version
-
-

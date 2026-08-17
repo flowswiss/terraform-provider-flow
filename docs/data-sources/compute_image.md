@@ -28,5 +28,3 @@ description: |-
 
 - `min_root_disk_size` (Number) minimum root disk size for servers using this image
 - `username` (String) default username to connect to the server with
-
-

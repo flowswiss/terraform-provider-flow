@@ -30,5 +30,3 @@ description: |-
 
 - `id` (Number) unique identifier of the network interface
 - `mac_address` (String) MAC address of the network interface
-
-
