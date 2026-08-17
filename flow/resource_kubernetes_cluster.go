@@ -327,5 +327,5 @@ func (k kubernetesClusterResource) Delete(ctx context.Context, request tfsdk.Del
 }
 
 func (k kubernetesClusterResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
-	tfsdk.ResourceImportStatePassthroughID(ctx, path.Root("id"), request, response)
+	importStatePassthroughInt64ID(ctx, path.Root("id"), request, response)
 }

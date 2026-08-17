@@ -150,7 +150,7 @@ func (r macBareMetalElasticIPResource) Delete(ctx context.Context, request tfsdk
 }
 
 func (r macBareMetalElasticIPResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
-	tfsdk.ResourceImportStatePassthroughID(ctx, path.Root("id"), request, response)
+	importStatePassthroughInt64ID(ctx, path.Root("id"), request, response)
 }
 
 func findMacBareMetalElasticIP(ctx context.Context, service macbaremetal.ElasticIPService, id int) (elasticIP macbaremetal.ElasticIP, diagnostics diag.Diagnostics) {

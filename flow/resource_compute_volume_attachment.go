@@ -190,5 +190,5 @@ func (r computeVolumeAttachmentResource) Delete(ctx context.Context, request tfs
 }
 
 func (r computeVolumeAttachmentResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
-	tfsdk.ResourceImportStatePassthroughID(ctx, path.Root("volume_id"), request, response)
+	importStatePassthroughInt64ID(ctx, path.Root("volume_id"), request, response)
 }

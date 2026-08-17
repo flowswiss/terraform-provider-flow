@@ -168,5 +168,5 @@ func (r macBareMetalSecurityGroupResource) Delete(ctx context.Context, request t
 }
 
 func (r macBareMetalSecurityGroupResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
-	tfsdk.ResourceImportStatePassthroughID(ctx, path.Root("id"), request, response)
+	importStatePassthroughInt64ID(ctx, path.Root("id"), request, response)
 }

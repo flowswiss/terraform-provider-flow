@@ -232,5 +232,5 @@ func (m macBareMetalDeviceResource) Delete(ctx context.Context, request tfsdk.De
 }
 
 func (m macBareMetalDeviceResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
-	tfsdk.ResourceImportStatePassthroughID(ctx, path.Root("id"), request, response)
+	importStatePassthroughInt64ID(ctx, path.Root("id"), request, response)
 }

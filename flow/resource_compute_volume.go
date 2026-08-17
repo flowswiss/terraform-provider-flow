@@ -252,7 +252,7 @@ func (r computeVolumeResource) Delete(ctx context.Context, request tfsdk.DeleteR
 }
 
 func (r computeVolumeResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
-	tfsdk.ResourceImportStatePassthroughID(ctx, path.Root("id"), request, response)
+	importStatePassthroughInt64ID(ctx, path.Root("id"), request, response)
 }
 
 func (r computeVolumeResource) waitForVolumeStatus(ctx context.Context, volumeID int) (done bool, diagnostics diag.Diagnostics) {

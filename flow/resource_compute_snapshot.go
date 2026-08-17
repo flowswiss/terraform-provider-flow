@@ -207,7 +207,7 @@ func (r computeSnapshotResource) Delete(ctx context.Context, request tfsdk.Delet
 }
 
 func (r computeSnapshotResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
-	tfsdk.ResourceImportStatePassthroughID(ctx, path.Root("id"), request, response)
+	importStatePassthroughInt64ID(ctx, path.Root("id"), request, response)
 }
 
 func (r computeSnapshotResource) waitForSnapshotStatus(ctx context.Context, snapshotID int) (done bool, diagnostics diag.Diagnostics) {

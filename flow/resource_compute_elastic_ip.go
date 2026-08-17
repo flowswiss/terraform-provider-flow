@@ -150,7 +150,7 @@ func (c computeElasticIPResource) Delete(ctx context.Context, request tfsdk.Dele
 }
 
 func (c computeElasticIPResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
-	tfsdk.ResourceImportStatePassthroughID(ctx, path.Root("id"), request, response)
+	importStatePassthroughInt64ID(ctx, path.Root("id"), request, response)
 }
 
 func findComputeElasticIP(ctx context.Context, service compute.ElasticIPService, id int) (elasticIP compute.ElasticIP, diagnostics diag.Diagnostics) {

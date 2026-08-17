@@ -167,5 +167,5 @@ func (c computeSecurityGroupResource) Delete(ctx context.Context, request tfsdk.
 }
 
 func (c computeSecurityGroupResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
-	tfsdk.ResourceImportStatePassthroughID(ctx, path.Root("id"), request, response)
+	importStatePassthroughInt64ID(ctx, path.Root("id"), request, response)
 }
