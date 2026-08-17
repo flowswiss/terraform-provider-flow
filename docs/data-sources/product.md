@@ -20,5 +20,3 @@ description: |-
 - `id` (Number) unique identifier of the product
 - `name` (String) name of the product
 - `type` (String) type of the product
-
-

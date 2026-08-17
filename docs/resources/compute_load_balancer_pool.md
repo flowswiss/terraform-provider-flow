@@ -56,5 +56,3 @@ Required:
 
 - `method` (String) HTTP method of the health check
 - `path` (String) path of the health check
-
-

@@ -20,5 +20,3 @@ description: |-
 - `id` (Number) unique identifier of the load balancer health check type
 - `key` (String) unique key of the load balancer health check type
 - `name` (String) name of the load balancer health check type
-
-

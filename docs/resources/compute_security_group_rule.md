@@ -57,5 +57,3 @@ Required:
 
 - `from` (Number) starting port of the security group rule
 - `to` (Number) ending port of the security group rule
-
-

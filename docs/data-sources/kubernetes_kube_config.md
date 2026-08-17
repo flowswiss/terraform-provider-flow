@@ -22,5 +22,3 @@ description: |-
 ### Read-Only
 
 - `kube_config` (String, Sensitive) kube config of the cluster
-
-

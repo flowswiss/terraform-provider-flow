@@ -34,5 +34,3 @@ description: |-
 - `id` (Number) unique identifier of the cluster
 - `public_address` (String) public address of the cluster
 - `security_group_id` (Number) unique identifier of the security group
-
-

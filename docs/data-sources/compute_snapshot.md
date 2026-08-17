@@ -25,5 +25,3 @@ description: |-
 
 - `created_at` (String) date and time when the snapshot was created
 - `size` (Number) size of the snapshot in GiB
-
-

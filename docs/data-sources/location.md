@@ -67,5 +67,3 @@ Read-Only:
 
 - `id` (Number) unique identifier of the parent module
 - `name` (String) name of the parent module
-
-

@@ -24,5 +24,3 @@ description: |-
 
 - `fingerprint` (String) fingerprint of the public key
 - `id` (Number) unique identifier of the key pair
-
-

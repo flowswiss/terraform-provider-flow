@@ -25,5 +25,3 @@ description: |-
 - `location_id` (Number) unique identifier of the location
 - `public` (Boolean) if the router is be public
 - `public_ip` (String) public IP of the router
-
-

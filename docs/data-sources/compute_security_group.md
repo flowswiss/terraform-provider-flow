@@ -20,5 +20,3 @@ description: |-
 - `id` (Number) unique identifier of the security group
 - `location_id` (Number) unique identifier of the location
 - `name` (String) name of the security group
-
-

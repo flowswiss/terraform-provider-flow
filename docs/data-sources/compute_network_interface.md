@@ -30,5 +30,3 @@ description: |-
 
 - `security` (Boolean) whether security groups are enabled on the network interface
 - `security_group_ids` (List of Number) list of security group IDs to assign to the network interface
-
-

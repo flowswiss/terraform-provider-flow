@@ -27,5 +27,3 @@ description: |-
 
 - `id` (Number) unique identifier of the device
 - `network_interface_id` (Number) unique identifier of the network interface
-
-
