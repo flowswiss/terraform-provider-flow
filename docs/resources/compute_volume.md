@@ -18,11 +18,11 @@ description: |-
 ### Required
 
 - `location_id` (Number) identifier of the location of the volume
+- `name` (String) name of the volume
 - `size` (Number) size in GiB of the volume
 
 ### Optional
 
-- `name` (String) name of the volume
 - `restore_from_snapshot_id` (Number) restore the volume from the snapshot
 
 ### Read-Only

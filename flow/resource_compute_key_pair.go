@@ -61,6 +61,7 @@ func (c computeKeyPairResourceType) GetSchema(ctx context.Context) (tfsdk.Schema
 				MarkdownDescription: "public key of the key pair",
 				Required:            true,
 				PlanModifiers: tfsdk.AttributePlanModifiers{
+					// TODO: write-only once the framework is on 1.x (Terraform ≥ 1.11 WriteOnly attributes) — until then an imported resource plans a replace here because the api never returns the value
 					tfsdk.RequiresReplace(),
 				},
 			},
@@ -96,7 +97,11 @@ func (c computeKeyPairResource) Create(ctx context.Context, request tfsdk.Create
 		PublicKey: config.PublicKey.Value,
 	}
 
-	keyPair, err := c.keyPairService.Create(ctx, create)
+	var keyPair compute.KeyPair
+	err := retryCreate(ctx, "create key pair", func() (err error) {
+		keyPair, err = c.keyPairService.Create(ctx, create)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to create key pair: %s", err))
 		return
@@ -136,7 +141,7 @@ func (c computeKeyPairResource) Read(ctx context.Context, request tfsdk.ReadReso
 		}
 	}
 
-	response.Diagnostics.AddError("Not Found", fmt.Sprintf("key pair with id %d not found", state.ID.Value))
+	removeGone(ctx, response, fmt.Sprintf("key pair %d", state.ID.Value))
 }
 
 func (c computeKeyPairResource) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
@@ -151,7 +156,9 @@ func (c computeKeyPairResource) Delete(ctx context.Context, request tfsdk.Delete
 		return
 	}
 
-	err := c.keyPairService.Delete(ctx, int(state.ID.Value))
+	err := retryDelete(ctx, "delete key pair", func() error {
+		return c.keyPairService.Delete(ctx, int(state.ID.Value))
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete key pair: %s", err))
 		return

@@ -7,13 +7,15 @@ import (
 	"github.com/flowswiss/goclient"
 	"github.com/flowswiss/goclient/compute"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
-	_ tfsdk.ResourceType = (*computeRouterInterfaceResourceType)(nil)
-	_ tfsdk.Resource     = (*computeRouterInterfaceResource)(nil)
+	_ tfsdk.ResourceType            = (*computeRouterInterfaceResourceType)(nil)
+	_ tfsdk.Resource                = (*computeRouterInterfaceResource)(nil)
+	_ tfsdk.ResourceWithImportState = (*computeRouterInterfaceResource)(nil)
 )
 
 type computeRouterInterfaceResourceData struct {
@@ -34,6 +36,7 @@ type computeRouterInterfaceResourceType struct{}
 
 func (c computeRouterInterfaceResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
+		MarkdownDescription: "Import: `terraform import flow_compute_router_interface.<name> <router_id>:<id>`",
 		Attributes: map[string]tfsdk.Attribute{
 			"id": {
 				Type:                types.Int64Type,
@@ -101,7 +104,11 @@ func (c computeRouterInterfaceResource) Create(ctx context.Context, request tfsd
 		PrivateIP: config.PrivateIP.Value,
 	}
 
-	routerInterface, err := compute.NewRouterInterfaceService(c.client, routerID).Create(ctx, create)
+	var routerInterface compute.RouterInterface
+	err := retryCreate(ctx, "create router interface", func() (err error) {
+		routerInterface, err = compute.NewRouterInterfaceService(c.client, routerID).Create(ctx, create)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to create router interface: %s", err))
 		return
@@ -125,6 +132,10 @@ func (c computeRouterInterfaceResource) Read(ctx context.Context, request tfsdk.
 	routerID := int(state.RouterID.Value)
 	list, err := compute.NewRouterInterfaceService(c.client, routerID).List(ctx, goclient.Cursor{NoFilter: 1})
 	if err != nil {
+		if isNotFound(err) {
+			removeGone(ctx, response, fmt.Sprintf("router %d", routerID))
+			return
+		}
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list router interfaces: %s", err))
 		return
 	}
@@ -139,7 +150,7 @@ func (c computeRouterInterfaceResource) Read(ctx context.Context, request tfsdk.
 		}
 	}
 
-	response.Diagnostics.AddError("Not Found", "router interface could not be found")
+	removeGone(ctx, response, fmt.Sprintf("router interface %d", state.ID.Value))
 }
 
 func (c computeRouterInterfaceResource) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
@@ -155,9 +166,15 @@ func (c computeRouterInterfaceResource) Delete(ctx context.Context, request tfsd
 	}
 
 	routerID := int(state.RouterID.Value)
-	err := compute.NewRouterInterfaceService(c.client, routerID).Delete(ctx, int(state.ID.Value))
+	err := retryDelete(ctx, "delete router interface", func() error {
+		return compute.NewRouterInterfaceService(c.client, routerID).Delete(ctx, int(state.ID.Value))
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete router interface: %s", err))
 		return
 	}
+}
+
+func (c computeRouterInterfaceResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
+	importStateCompositeInt64IDs(ctx, request, response, path.Root("router_id"), path.Root("id"))
 }

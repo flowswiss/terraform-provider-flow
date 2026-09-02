@@ -2,11 +2,14 @@ package flow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/flowswiss/goclient"
 	"github.com/flowswiss/goclient/compute"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
@@ -14,8 +17,9 @@ import (
 )
 
 var (
-	_ tfsdk.ResourceType = (*computeNetworkInterfaceResourceType)(nil)
-	_ tfsdk.Resource     = (*computeNetworkInterfaceResource)(nil)
+	_ tfsdk.ResourceType            = (*computeNetworkInterfaceResourceType)(nil)
+	_ tfsdk.Resource                = (*computeNetworkInterfaceResource)(nil)
+	_ tfsdk.ResourceWithImportState = (*computeNetworkInterfaceResource)(nil)
 )
 
 type computeNetworkInterfaceResourceData struct {
@@ -26,8 +30,8 @@ type computeNetworkInterfaceResourceData struct {
 	PrivateIP  types.String `tfsdk:"private_ip"`
 	MacAddress types.String `tfsdk:"mac_address"`
 
-	SecurityGroupIDs []types.Int64 `tfsdk:"security_group_ids"`
-	Security         types.Bool    `tfsdk:"security"`
+	SecurityGroupIDs types.Set  `tfsdk:"security_group_ids"`
+	Security         types.Bool `tfsdk:"security"`
 }
 
 func (c *computeNetworkInterfaceResourceData) FromEntity(serverID int, iface compute.NetworkInterface) {
@@ -38,11 +42,7 @@ func (c *computeNetworkInterfaceResourceData) FromEntity(serverID int, iface com
 	c.PrivateIP = types.String{Value: iface.PrivateIP}
 	c.MacAddress = types.String{Value: iface.MacAddress}
 
-	c.SecurityGroupIDs = make([]types.Int64, len(iface.SecurityGroups))
-	for idx, securityGroup := range iface.SecurityGroups {
-		c.SecurityGroupIDs[idx] = types.Int64{Value: int64(securityGroup.ID)}
-	}
-
+	c.SecurityGroupIDs = securityGroupIDSet(iface)
 	c.Security = types.Bool{Value: iface.Security}
 }
 
@@ -54,6 +54,7 @@ type computeNetworkInterfaceResourceType struct{}
 
 func (c computeNetworkInterfaceResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
+		MarkdownDescription: "Import: `terraform import flow_compute_network_interface.<name> <server_id>:<id>`",
 		Attributes: map[string]tfsdk.Attribute{
 			"id": {
 				Type:                types.Int64Type,
@@ -87,25 +88,32 @@ func (c computeNetworkInterfaceResourceType) GetSchema(ctx context.Context) (tfs
 				Computed:            true,
 				PlanModifiers: tfsdk.AttributePlanModifiers{
 					tfsdk.RequiresReplace(),
+					tfsdk.UseStateForUnknown(),
 				},
 			},
 			"mac_address": {
 				Type:                types.StringType,
 				MarkdownDescription: "MAC address of the network interface",
 				Computed:            true,
+				PlanModifiers: tfsdk.AttributePlanModifiers{
+					tfsdk.UseStateForUnknown(),
+				},
 			},
 
 			"security_group_ids": {
-				Type:                types.ListType{ElemType: types.Int64Type},
-				MarkdownDescription: "list of security group IDs to assign to the network interface",
+				Type:                types.SetType{ElemType: types.Int64Type},
+				MarkdownDescription: "security groups attached to the network interface — the organisation's default group when omitted; at least one is required while `security` is enabled, set `security = false` to detach all",
 				Optional:            true,
 				Computed:            true,
 			},
 			"security": {
 				Type:                types.BoolType,
-				MarkdownDescription: "whether to enable security groups on the network interface",
+				MarkdownDescription: "whether to enable security groups on the network interface — enabled by default; enabling it resets the groups to the organisation's default group, disabling it detaches all groups",
 				Optional:            true,
 				Computed:            true,
+				PlanModifiers: tfsdk.AttributePlanModifiers{
+					tfsdk.UseStateForUnknown(),
+				},
 			},
 		},
 	}, nil
@@ -142,44 +150,53 @@ func (c computeNetworkInterfaceResource) Create(ctx context.Context, request tfs
 		PrivateIP: config.PrivateIP.Value,
 	}
 
-	iface, err := service.Create(ctx, create)
+	var iface compute.NetworkInterface
+	err := retryCreate(ctx, "create network interface", func() (err error) {
+		iface, err = service.Create(ctx, create)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to create network interface: %s", err))
 		return
 	}
 
-	if len(config.SecurityGroupIDs) != 0 {
-		update := compute.NetworkInterfaceSecurityGroupUpdate{
-			SecurityGroupIDs: make([]int, len(config.SecurityGroupIDs)),
-		}
+	ifaceID := iface.ID
 
-		for idx, securityGroupID := range config.SecurityGroupIDs {
-			update.SecurityGroupIDs[idx] = int(securityGroupID.Value)
-		}
+	rollback := func(what string, err error) {
+		_ = retryDelete(ctx, "delete network interface", func() error { return service.Delete(ctx, ifaceID) })
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("%s: %s", what, err))
+	}
 
-		iface, err = service.UpdateSecurityGroups(ctx, iface.ID, update)
+	if !config.Security.Null && !config.Security.Unknown && config.Security.Value != iface.Security {
+		update := compute.NetworkInterfaceSecurityUpdate{Security: config.Security.Value}
+
+		err = retry(ctx, "update network interface security", func() error {
+			updated, err := service.UpdateSecurity(ctx, ifaceID, update)
+			if err != nil {
+				return err
+			}
+			iface = updated
+			return nil
+		})
 		if err != nil {
-			// delete the interface if we failed to update the security groups
-			// TODO: should we add a backoff here if the deletion fails?
-			_ = service.Delete(ctx, iface.ID)
-
-			response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to update security groups: %s", err))
+			rollback("unable to update network interface security", err)
 			return
 		}
 	}
 
-	if !config.Security.Null && !config.Security.Value {
-		update := compute.NetworkInterfaceSecurityUpdate{
-			Security: config.Security.Value,
-		}
+	if !config.SecurityGroupIDs.Null && !config.SecurityGroupIDs.Unknown && !config.SecurityGroupIDs.Equal(securityGroupIDSet(iface)) {
+		update := compute.NetworkInterfaceSecurityGroupUpdate{SecurityGroupIDs: securityGroupIDs(config.SecurityGroupIDs)}
 
-		iface, err = service.UpdateSecurity(ctx, iface.ID, update)
+		err = retry(ctx, "update security groups", func() error {
+			updated, err := service.UpdateSecurityGroups(ctx, ifaceID, update)
+			if err != nil {
+				return err
+			}
+			iface = updated
+			return nil
+		})
 		if err != nil {
-			// delete the interface if we failed to update the security
-			// TODO: should we add a backoff here if the deletion fails?
-			_ = service.Delete(ctx, iface.ID)
-
-			response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to update network interface security: %s", err))
+			rollback("unable to update security groups", err)
 			return
 		}
 	}
@@ -203,13 +220,21 @@ func (c computeNetworkInterfaceResource) Read(ctx context.Context, request tfsdk
 
 	list, err := c.serverService.NetworkInterfaces(serverID).List(ctx, goclient.Cursor{NoFilter: 1})
 	if err != nil {
+		if isNotFound(err) {
+			removeGone(ctx, response, fmt.Sprintf("server %d", serverID))
+			return
+		}
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list network interfaces: %s", err))
 		return
 	}
 
 	iface, err := filter.FindOne(state, list.Items)
 	if err != nil {
-		response.Diagnostics.AddError("Not Found", fmt.Sprintf("unable to find network interface: %s", err))
+		if errors.Is(err, filter.ErrNoResults) {
+			removeGone(ctx, response, fmt.Sprintf("network interface %d", state.ID.Value))
+			return
+		}
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to find network interface: %s", err))
 		return
 	}
 
@@ -227,8 +252,8 @@ func (c computeNetworkInterfaceResource) Update(ctx context.Context, request tfs
 		return
 	}
 
-	var config computeNetworkInterfaceResourceData
-	diagnostics = request.Config.Get(ctx, &config)
+	var plan computeNetworkInterfaceResourceData
+	diagnostics = request.Plan.Get(ctx, &plan)
 	response.Diagnostics.Append(diagnostics...)
 	if response.Diagnostics.HasError() {
 		return
@@ -236,35 +261,34 @@ func (c computeNetworkInterfaceResource) Update(ctx context.Context, request tfs
 
 	serverID := int(state.ServerID.Value)
 	ifaceID := int(state.ID.Value)
-
 	service := c.serverService.NetworkInterfaces(serverID)
 
-	if len(config.SecurityGroupIDs) != 0 {
-		update := compute.NetworkInterfaceSecurityGroupUpdate{
-			SecurityGroupIDs: make([]int, len(config.SecurityGroupIDs)),
-		}
+	if !plan.Security.Unknown && plan.Security.Value != state.Security.Value {
+		update := compute.NetworkInterfaceSecurityUpdate{Security: plan.Security.Value}
 
-		for idx, securityGroupID := range config.SecurityGroupIDs {
-			update.SecurityGroupIDs[idx] = int(securityGroupID.Value)
-		}
-
-		iface, err := service.UpdateSecurityGroups(ctx, ifaceID, update)
+		var iface compute.NetworkInterface
+		err := retry(ctx, "update network interface security", func() (err error) {
+			iface, err = service.UpdateSecurity(ctx, ifaceID, update)
+			return err
+		})
 		if err != nil {
-			response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to update security groups: %s", err))
+			response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to update network interface security: %s", err))
 			return
 		}
 
 		state.FromEntity(serverID, iface)
 	}
 
-	if !config.Security.Null && config.Security.Value != state.Security.Value {
-		update := compute.NetworkInterfaceSecurityUpdate{
-			Security: config.Security.Value,
-		}
+	if !plan.SecurityGroupIDs.Unknown && !plan.SecurityGroupIDs.Null && !plan.SecurityGroupIDs.Equal(state.SecurityGroupIDs) {
+		update := compute.NetworkInterfaceSecurityGroupUpdate{SecurityGroupIDs: securityGroupIDs(plan.SecurityGroupIDs)}
 
-		iface, err := service.UpdateSecurity(ctx, ifaceID, update)
+		var iface compute.NetworkInterface
+		err := retry(ctx, "update security groups", func() (err error) {
+			iface, err = service.UpdateSecurityGroups(ctx, ifaceID, update)
+			return err
+		})
 		if err != nil {
-			response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to update network interface security: %s", err))
+			response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to update security groups: %s", err))
 			return
 		}
 
@@ -286,9 +310,33 @@ func (c computeNetworkInterfaceResource) Delete(ctx context.Context, request tfs
 	serverID := int(state.ServerID.Value)
 	ifaceID := int(state.ID.Value)
 
-	err := c.serverService.NetworkInterfaces(serverID).Delete(ctx, ifaceID)
+	err := retryDelete(ctx, "delete network interface", func() error {
+		return c.serverService.NetworkInterfaces(serverID).Delete(ctx, ifaceID)
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete network interface: %s", err))
 		return
 	}
+}
+
+func securityGroupIDSet(iface compute.NetworkInterface) types.Set {
+	elems := make([]attr.Value, len(iface.SecurityGroups))
+	for i, group := range iface.SecurityGroups {
+		elems[i] = types.Int64{Value: int64(group.ID)}
+	}
+	return types.Set{ElemType: types.Int64Type, Elems: elems}
+}
+
+func securityGroupIDs(set types.Set) []int {
+	ids := make([]int, 0, len(set.Elems))
+	for _, elem := range set.Elems {
+		if id, ok := elem.(types.Int64); ok && !id.Null && !id.Unknown {
+			ids = append(ids, int(id.Value))
+		}
+	}
+	return ids
+}
+
+func (c computeNetworkInterfaceResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
+	importStateCompositeInt64IDs(ctx, request, response, path.Root("server_id"), path.Root("id"))
 }

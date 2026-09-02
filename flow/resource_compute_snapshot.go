@@ -105,26 +105,31 @@ func (r computeSnapshotResource) Create(ctx context.Context, request tfsdk.Creat
 		VolumeID: int(config.VolumeID.Value),
 	}
 
-	snapshot, err := r.snapshotService.Create(ctx, create)
+	var snapshot compute.Snapshot
+	err := retryCreate(ctx, "create snapshot", func() (err error) {
+		snapshot, err = r.snapshotService.Create(ctx, create)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to create snapshot: %s", err))
 		return
 	}
-
-	var state computeSnapshotResourceData
-	state.FromEntity(snapshot)
 
 	tflog.Trace(ctx, "created snapshot", map[string]interface{}{
 		"id":   snapshot.ID,
 		"data": snapshot,
 	})
 
-	if snapshot.Status.ID == compute.SnapshotStatusCreating {
-		// wait for the snapshot to be ready
-		waitForCondition(ctx, func(ctx context.Context) (bool, diag.Diagnostics) {
-			return r.waitForSnapshotStatus(ctx, snapshot.ID)
-		})
+	available, err := r.waitForSnapshotAvailable(ctx, snapshot.ID)
+	if err != nil {
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for snapshot to be available: %s", err))
 	}
+	if available.ID != 0 {
+		snapshot = available
+	}
+
+	var state computeSnapshotResourceData
+	state.FromEntity(snapshot)
 
 	diagnostics = response.State.Set(ctx, state)
 	response.Diagnostics.Append(diagnostics...)
@@ -140,6 +145,10 @@ func (r computeSnapshotResource) Read(ctx context.Context, request tfsdk.ReadRes
 
 	snapshot, err := r.snapshotService.Get(ctx, int(state.ID.Value))
 	if err != nil {
+		if isNotFound(err) {
+			removeGone(ctx, response, fmt.Sprintf("snapshot %d", state.ID.Value))
+			return
+		}
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get snapshot: %s", err))
 		return
 	}
@@ -179,7 +188,11 @@ func (r computeSnapshotResource) Update(ctx context.Context, request tfsdk.Updat
 		Name: config.Name.Value,
 	}
 
-	snapshot, err := r.snapshotService.Update(ctx, int(state.ID.Value), update)
+	var snapshot compute.Snapshot
+	err := retry(ctx, "update snapshot", func() (err error) {
+		snapshot, err = r.snapshotService.Update(ctx, int(state.ID.Value), update)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to update snapshot: %s", err))
 		return
@@ -199,7 +212,9 @@ func (r computeSnapshotResource) Delete(ctx context.Context, request tfsdk.Delet
 		return
 	}
 
-	err := r.snapshotService.Delete(ctx, int(state.ID.Value))
+	err := retryDelete(ctx, "delete snapshot", func() error {
+		return r.snapshotService.Delete(ctx, int(state.ID.Value))
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete snapshot: %s", err))
 		return
@@ -210,13 +225,25 @@ func (r computeSnapshotResource) ImportState(ctx context.Context, request tfsdk.
 	importStatePassthroughInt64ID(ctx, path.Root("id"), request, response)
 }
 
-func (r computeSnapshotResource) waitForSnapshotStatus(ctx context.Context, snapshotID int) (done bool, diagnostics diag.Diagnostics) {
-	snapshot, err := r.snapshotService.Get(ctx, snapshotID)
-	if err != nil {
-		diagnostics.AddError("Client Error", fmt.Sprintf("unable to get snapshot: %s", err))
-		return
-	}
+// the snapshot stays in the creating state while the data is copied —
+// restoring or deleting it in that window is refused
+func (r computeSnapshotResource) waitForSnapshotAvailable(ctx context.Context, snapshotID int) (snapshot compute.Snapshot, err error) {
+	err = waitFor(ctx, snapshotTimeout, defaultWaitInterval, fmt.Sprintf("snapshot %d to be available", snapshotID), func(ctx context.Context) (bool, error) {
+		got, err := r.snapshotService.Get(ctx, snapshotID)
+		if err != nil {
+			return false, err
+		}
+		snapshot = got
 
-	done = snapshot.Status.ID != compute.SnapshotStatusCreating
-	return
+		switch snapshot.Status.ID {
+		case compute.SnapshotStatusAvailable:
+			return true, nil
+		case compute.SnapshotStatusError:
+			return false, fmt.Errorf("snapshot %d is in error state", snapshotID)
+		default:
+			return false, nil
+		}
+	})
+
+	return snapshot, err
 }

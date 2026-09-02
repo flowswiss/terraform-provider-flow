@@ -3,12 +3,12 @@
 page_title: "flow_compute_network_interface Resource - terraform-provider-flow"
 subcategory: ""
 description: |-
-  
+  Import: terraform import flow_compute_network_interface.<name> <server_id>:<id>
 ---
 
 # flow_compute_network_interface (Resource)
 
-
+Import: `terraform import flow_compute_network_interface.<name> <server_id>:<id>`
 
 
 
@@ -23,8 +23,8 @@ description: |-
 ### Optional
 
 - `private_ip` (String) private IP address of the network interface
-- `security` (Boolean) whether to enable security groups on the network interface
-- `security_group_ids` (List of Number) list of security group IDs to assign to the network interface
+- `security` (Boolean) whether to enable security groups on the network interface — enabled by default; enabling it resets the groups to the organisation's default group, disabling it detaches all groups
+- `security_group_ids` (Set of Number) security groups attached to the network interface — the organisation's default group when omitted; at least one is required while `security` is enabled, set `security = false` to detach all
 
 ### Read-Only
 

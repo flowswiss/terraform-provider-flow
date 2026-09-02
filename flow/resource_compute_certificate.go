@@ -143,6 +143,7 @@ func (c computeCertificateResourceType) GetSchema(ctx context.Context) (tfsdk.Sc
 				MarkdownDescription: "certificate in base64 encoded PEM format",
 				Required:            true,
 				PlanModifiers: tfsdk.AttributePlanModifiers{
+					// TODO: write-only once the framework is on 1.x (Terraform ≥ 1.11 WriteOnly attributes) — until then an imported resource plans a replace here because the api never returns the value
 					tfsdk.RequiresReplace(),
 				},
 			},
@@ -152,6 +153,7 @@ func (c computeCertificateResourceType) GetSchema(ctx context.Context) (tfsdk.Sc
 				Required:            true,
 				Sensitive:           true,
 				PlanModifiers: tfsdk.AttributePlanModifiers{
+					// TODO: write-only once the framework is on 1.x (Terraform ≥ 1.11 WriteOnly attributes) — until then an imported resource plans a replace here because the api never returns the value
 					tfsdk.RequiresReplace(),
 				},
 			},
@@ -220,7 +222,11 @@ func (c computeCertificateResource) Create(ctx context.Context, request tfsdk.Cr
 		PrivateKey:  config.PrivateKey.Value,
 	}
 
-	certificate, err := c.certificateService.Create(ctx, create)
+	var certificate compute.Certificate
+	err := retryCreate(ctx, "create certificate", func() (err error) {
+		certificate, err = c.certificateService.Create(ctx, create)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to create certificate: %s", err))
 		return
@@ -261,7 +267,7 @@ func (c computeCertificateResource) Read(ctx context.Context, request tfsdk.Read
 		}
 	}
 
-	response.Diagnostics.AddError("Not Found", fmt.Sprintf("certificate with id %d not found", state.ID.Value))
+	removeGone(ctx, response, fmt.Sprintf("certificate %d", state.ID.Value))
 }
 
 func (c computeCertificateResource) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
@@ -276,7 +282,9 @@ func (c computeCertificateResource) Delete(ctx context.Context, request tfsdk.De
 		return
 	}
 
-	err := c.certificateService.Delete(ctx, int(state.ID.Value))
+	err := retryDelete(ctx, "delete certificate", func() error {
+		return c.certificateService.Delete(ctx, int(state.ID.Value))
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete certificate: %s", err))
 		return

@@ -3,6 +3,8 @@ package flow
 import (
 	"context"
 	"fmt"
+
+	"github.com/flowswiss/goclient/compute"
 	"github.com/flowswiss/goclient/kubernetes"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -67,9 +69,24 @@ func (k kubernetesKubeConfigDataSource) Read(ctx context.Context, request tfsdk.
 		return
 	}
 
-	kubeConfig, err := k.clusterService.GetKubeConfig(ctx, int(config.ClusterID.Value))
+	clusterID := int(config.ClusterID.Value)
+
+	// the kube-config is refused  until the cluster is healthy and unlocked — the plain get first so a wrong id fails at once
+	cluster, err := k.clusterService.Get(ctx, clusterID)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get cluster: %s", err))
+		return
+	}
+	if cluster.Locked || cluster.Status.ID != compute.ClusterStatusHealthy {
+		if _, err := waitForClusterReady(ctx, k.clusterService, clusterID); err != nil {
+			response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for cluster to be ready: %s", err))
+			return
+		}
+	}
+
+	kubeConfig, err := k.clusterService.GetKubeConfig(ctx, clusterID)
+	if err != nil {
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get kube config: %s", err))
 		return
 	}
 

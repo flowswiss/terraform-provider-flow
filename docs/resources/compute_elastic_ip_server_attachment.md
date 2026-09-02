@@ -3,12 +3,12 @@
 page_title: "flow_compute_elastic_ip_server_attachment Resource - terraform-provider-flow"
 subcategory: ""
 description: |-
-  
+  Import: terraform import flow_compute_elastic_ip_server_attachment.<name> <server_id>:<elastic_ip_id>
 ---
 
 # flow_compute_elastic_ip_server_attachment (Resource)
 
-
+Import: `terraform import flow_compute_elastic_ip_server_attachment.<name> <server_id>:<elastic_ip_id>`
 
 
 
@@ -18,5 +18,5 @@ description: |-
 ### Required
 
 - `elastic_ip_id` (Number) unique identifier of the elastic ip to attach to the server
-- `network_interface_id` (Number) unique identifier of the network interface of the server to attach the elastic ip to
+- `network_interface_id` (Number) unique identifier of the network interface to attach the elastic ip to — `flow_compute_server.<name>.network_interface_id` for a server's primary interface
 - `server_id` (Number) unique identifier of the server to attach the elastic ip to

@@ -3,6 +3,7 @@ package flow
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/flowswiss/goclient/compute"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -61,7 +62,7 @@ func (t computeVolumeResourceType) GetSchema(ctx context.Context) (tfsdk.Schema,
 			"name": {
 				Type:                types.StringType,
 				MarkdownDescription: "name of the volume",
-				Optional:            true,
+				Required:            true,
 			},
 			"size": {
 				Type:                types.Int64Type,
@@ -124,10 +125,27 @@ func (r computeVolumeResource) Create(ctx context.Context, request tfsdk.CreateR
 		SnapshotID: int(config.Snapshot.Value),
 	}
 
-	volume, err := r.volumeService.Create(ctx, create)
+	var volume compute.Volume
+	err := retryCreate(ctx, "create volume", func() (err error) {
+		volume, err = r.volumeService.Create(ctx, create)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to create volume: %s", err))
 		return
+	}
+
+	tflog.Trace(ctx, "created volume", map[string]interface{}{
+		"id":   volume.ID,
+		"data": volume,
+	})
+
+	settled, err := r.waitForVolumeSettled(ctx, volume.ID, snapshotTimeout)
+	if err != nil {
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for volume to settle: %s", err))
+	}
+	if settled.ID != 0 {
+		volume = settled
 	}
 
 	var state computeVolumeResourceData
@@ -136,18 +154,6 @@ func (r computeVolumeResource) Create(ctx context.Context, request tfsdk.CreateR
 	// copy the restored snapshot property from the config. in the api we don't know anymore if there was a snapshot
 	// that has been restored.
 	state.Snapshot = config.Snapshot
-
-	tflog.Trace(ctx, "created volume", map[string]interface{}{
-		"id":   volume.ID,
-		"data": volume,
-	})
-
-	if volume.Status.ID == compute.VolumeStatusWorking {
-		// wait for the volume to be ready
-		waitForCondition(ctx, func(ctx context.Context) (bool, diag.Diagnostics) {
-			return r.waitForVolumeStatus(ctx, volume.ID)
-		})
-	}
 
 	diagnostics = response.State.Set(ctx, state)
 	response.Diagnostics.Append(diagnostics...)
@@ -163,6 +169,10 @@ func (r computeVolumeResource) Read(ctx context.Context, request tfsdk.ReadResou
 
 	volume, err := r.volumeService.Get(ctx, int(state.ID.Value))
 	if err != nil {
+		if isNotFound(err) {
+			removeGone(ctx, response, fmt.Sprintf("volume %d", state.ID.Value))
+			return
+		}
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get volume: %s", err))
 		return
 	}
@@ -181,8 +191,8 @@ func (r computeVolumeResource) Update(ctx context.Context, request tfsdk.UpdateR
 		return
 	}
 
-	var config computeVolumeResourceData
-	diagnostics = request.Config.Get(ctx, &config)
+	var plan computeVolumeResourceData
+	diagnostics = request.Plan.Get(ctx, &plan)
 	response.Diagnostics.Append(diagnostics...)
 	if response.Diagnostics.HasError() {
 		return
@@ -194,38 +204,50 @@ func (r computeVolumeResource) Update(ctx context.Context, request tfsdk.UpdateR
 		return
 	}
 
-	if !config.Name.Equal(state.Name) {
+	if !plan.Name.Equal(state.Name) {
 		tflog.Debug(ctx, "volume name has changed: updating volume", map[string]interface{}{
 			"volume_id":      state.ID,
 			"previous_name":  state.Name,
-			"requested_name": config.Name,
+			"requested_name": plan.Name,
 		})
 
 		update := compute.VolumeUpdate{
-			Name: config.Name.Value,
+			Name: plan.Name.Value,
 		}
 
-		volume, err = r.volumeService.Update(ctx, int(state.ID.Value), update)
+		err = retry(ctx, "update volume", func() (err error) {
+			volume, err = r.volumeService.Update(ctx, int(state.ID.Value), update)
+			return err
+		})
 		if err != nil {
 			response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to update volume: %s", err))
 			return
 		}
 	}
 
-	if !config.Size.Equal(state.Size) {
+	if !plan.Size.Equal(state.Size) {
 		tflog.Debug(ctx, "volume size has changed: expanding volume", map[string]interface{}{
 			"volume_id":      state.ID,
 			"previous_size":  state.Size,
-			"requested_size": config.Size,
+			"requested_size": plan.Size,
 		})
 
 		expand := compute.VolumeExpand{
-			Size: int(config.Size.Value),
+			Size: int(plan.Size.Value),
 		}
 
-		volume, err = r.volumeService.Expand(ctx, int(state.ID.Value), expand)
+		err = retry(ctx, "expand volume", func() (err error) {
+			volume, err = r.volumeService.Expand(ctx, int(state.ID.Value), expand)
+			return err
+		})
 		if err != nil {
 			response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to expand volume: %s", err))
+			return
+		}
+
+		volume, err = r.waitForVolumeSettled(ctx, int(state.ID.Value), volumeSettleTimeout)
+		if err != nil {
+			response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for volume to settle: %s", err))
 			return
 		}
 	}
@@ -244,7 +266,9 @@ func (r computeVolumeResource) Delete(ctx context.Context, request tfsdk.DeleteR
 		return
 	}
 
-	err := r.volumeService.Delete(ctx, int(state.ID.Value))
+	err := retryDelete(ctx, "delete volume", func() error {
+		return r.volumeService.Delete(ctx, int(state.ID.Value))
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete volume: %s", err))
 		return
@@ -255,13 +279,25 @@ func (r computeVolumeResource) ImportState(ctx context.Context, request tfsdk.Im
 	importStatePassthroughInt64ID(ctx, path.Root("id"), request, response)
 }
 
-func (r computeVolumeResource) waitForVolumeStatus(ctx context.Context, volumeID int) (done bool, diagnostics diag.Diagnostics) {
-	volume, err := r.volumeService.Get(ctx, volumeID)
-	if err != nil {
-		diagnostics.AddError("Client Error", fmt.Sprintf("unable to get volume: %s", err))
-		return
-	}
+// a restore or an expand leaves the volume in the working state while the
+// job is finished — follow-up calls are refused until then
+func (r computeVolumeResource) waitForVolumeSettled(ctx context.Context, volumeID int, timeout time.Duration) (volume compute.Volume, err error) {
+	err = waitFor(ctx, timeout, defaultWaitInterval, fmt.Sprintf("volume %d to settle", volumeID), func(ctx context.Context) (bool, error) {
+		got, err := r.volumeService.Get(ctx, volumeID)
+		if err != nil {
+			return false, err
+		}
+		volume = got
 
-	done = volume.Status.ID != compute.VolumeStatusWorking
-	return
+		switch volume.Status.ID {
+		case compute.VolumeStatusAvailable, compute.VolumeStatusInUse:
+			return true, nil
+		case compute.VolumeStatusError:
+			return false, fmt.Errorf("volume %d is in error state", volumeID)
+		default:
+			return false, nil
+		}
+	})
+
+	return volume, err
 }

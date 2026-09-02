@@ -66,10 +66,12 @@ func (c computeLoadBalancerResourceType) GetSchema(ctx context.Context) (tfsdk.S
 			},
 			"network_id": {
 				Type:                types.Int64Type,
-				MarkdownDescription: "unique identifier of the initial network",
+				MarkdownDescription: "unique identifier of the initial network (the organisation's default network when omitted)",
 				Optional:            true,
+				Computed:            true,
 				PlanModifiers: tfsdk.AttributePlanModifiers{
 					tfsdk.RequiresReplace(),
+					tfsdk.UseStateForUnknown(),
 				},
 			},
 			"private_ip": {
@@ -79,6 +81,7 @@ func (c computeLoadBalancerResourceType) GetSchema(ctx context.Context) (tfsdk.S
 				Computed:            true,
 				PlanModifiers: tfsdk.AttributePlanModifiers{
 					tfsdk.RequiresReplace(),
+					tfsdk.UseStateForUnknown(),
 				},
 			},
 		},
@@ -117,28 +120,28 @@ func (c computeLoadBalancerResource) Create(ctx context.Context, request tfsdk.C
 		PrivateIP:        config.PrivateIP.Value,
 	}
 
-	ordering, err := c.loadBalancerService.Create(ctx, create)
+	var ordering common.Ordering
+	err := retryCreate(ctx, "create load balancer", func() (err error) {
+		ordering, err = c.loadBalancerService.Create(ctx, create)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to create load balancer: %s", err))
 		return
 	}
 
-	order, err := c.orderService.WaitUntilProcessed(ctx, ordering)
+	order, err := waitForOrder(ctx, c.orderService, ordering)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for load balancer creation: %s", err))
 		return
 	}
 
-	loadBalancer, err := c.loadBalancerService.Get(ctx, order.Product.ID)
-	if err != nil {
-		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get load balancer: %s", err))
-		return
-	}
-
-	err = c.loadBalancerService.WaitUntilMutable(ctx, loadBalancer.ID)
+	loadBalancer, err := waitForLoadBalancerMutable(ctx, c.loadBalancerService, order.Product.ID)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for load balancer to be mutable: %s", err))
-		return
+		if loadBalancer.ID == 0 {
+			return
+		}
 	}
 
 	var state computeLoadBalancerResourceData
@@ -156,6 +159,10 @@ func (c computeLoadBalancerResource) Read(ctx context.Context, request tfsdk.Rea
 
 	loadBalancer, err := c.loadBalancerService.Get(ctx, int(state.ID.Value))
 	if err != nil {
+		if isNotFound(err) {
+			removeGone(ctx, response, fmt.Sprintf("load balancer %d", state.ID.Value))
+			return
+		}
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get load balancer: %s", err))
 		return
 	}
@@ -182,7 +189,11 @@ func (c computeLoadBalancerResource) Update(ctx context.Context, request tfsdk.U
 		Name: config.Name.Value,
 	}
 
-	loadBalancer, err := c.loadBalancerService.Update(ctx, int(state.ID.Value), update)
+	var loadBalancer compute.LoadBalancer
+	err := retry(ctx, "update load balancer", func() (err error) {
+		loadBalancer, err = c.loadBalancerService.Update(ctx, int(state.ID.Value), update)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to update load balancer: %s", err))
 		return
@@ -200,7 +211,9 @@ func (c computeLoadBalancerResource) Delete(ctx context.Context, request tfsdk.D
 		return
 	}
 
-	err := c.loadBalancerService.Delete(ctx, int(state.ID.Value))
+	err := retryDelete(ctx, "delete load balancer", func() error {
+		return c.loadBalancerService.Delete(ctx, int(state.ID.Value))
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete load balancer: %s", err))
 		return
@@ -209,4 +222,27 @@ func (c computeLoadBalancerResource) Delete(ctx context.Context, request tfsdk.D
 
 func (c computeLoadBalancerResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
 	importStatePassthroughInt64ID(ctx, path.Root("id"), request, response)
+}
+
+// the api refuses every change to a load balancer, its pools and members while
+// the status is working — poll until it settles
+func waitForLoadBalancerMutable(ctx context.Context, service compute.LoadBalancerService, loadBalancerID int) (loadBalancer compute.LoadBalancer, err error) {
+	err = waitFor(ctx, loadBalancerTimeout, defaultWaitInterval, fmt.Sprintf("load balancer %d to be mutable", loadBalancerID), func(ctx context.Context) (bool, error) {
+		got, err := service.Get(ctx, loadBalancerID)
+		if err != nil {
+			return false, err
+		}
+		loadBalancer = got
+
+		switch loadBalancer.Status.ID {
+		case compute.LoadBalancerStatusWorking:
+			return false, nil
+		case compute.LoadBalancerStatusError:
+			return false, fmt.Errorf("load balancer %d is in error state", loadBalancerID)
+		default:
+			return true, nil
+		}
+	})
+
+	return loadBalancer, err
 }

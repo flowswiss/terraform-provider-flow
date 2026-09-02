@@ -17,4 +17,5 @@ description: |-
 ### Optional
 
 - `endpoint` (String) endpoint for the flow api
+- `retry_timeout` (String) how long a failing api call is retried before the error is reported, as a duration such as `90s` or `2m` (default `90s`, `0` disables retries). can also be set with the `FLOW_RETRY_TIMEOUT` environment variable
 - `token` (String, Sensitive) authentication token for the flow api

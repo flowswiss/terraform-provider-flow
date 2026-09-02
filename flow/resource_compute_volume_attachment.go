@@ -3,6 +3,7 @@ package flow
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/flowswiss/goclient"
 	"github.com/flowswiss/goclient/compute"
@@ -34,12 +35,15 @@ func (t computeVolumeAttachmentResourceType) GetSchema(ctx context.Context) (tfs
 		Attributes: map[string]tfsdk.Attribute{
 			"volume_id": {
 				Type:                types.Int64Type,
-				MarkdownDescription: "identifier of the volume for the attachment",
+				MarkdownDescription: "identifier of the volume for the attachment — changing it replaces the attachment (detach, attach), the volumes themselves are not touched",
 				Required:            true,
+				PlanModifiers: tfsdk.AttributePlanModifiers{
+					tfsdk.RequiresReplace(),
+				},
 			},
 			"server_id": {
 				Type:                types.Int64Type,
-				MarkdownDescription: "identifier of the server for the attachment",
+				MarkdownDescription: "identifier of the server for the attachment — changing it moves the volume to the other server",
 				Required:            true,
 			},
 		},
@@ -98,10 +102,21 @@ func (r computeVolumeAttachmentResource) Create(ctx context.Context, request tfs
 		InstanceID: int(config.ServerID.Value),
 	}
 
-	volume, err = service.Attach(ctx, int(config.VolumeID.Value), attach)
+	err = retry(ctx, "attach volume", func() (err error) {
+		volume, err = service.Attach(ctx, int(config.VolumeID.Value), attach)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to attach volume: %s", err))
 		return
+	}
+
+	attached, err := r.waitForVolumeStatus(ctx, "in use", int(config.VolumeID.Value), compute.VolumeStatusInUse)
+	if err != nil {
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for volume attachment: %s", err))
+	}
+	if attached.ID != 0 {
+		volume = attached
 	}
 
 	var state computeVolumeAttachmentResourceData
@@ -121,7 +136,16 @@ func (r computeVolumeAttachmentResource) Read(ctx context.Context, request tfsdk
 
 	volume, err := compute.NewVolumeService(r.client).Get(ctx, int(state.VolumeID.Value))
 	if err != nil {
+		if isNotFound(err) {
+			removeGone(ctx, response, fmt.Sprintf("volume %d", state.VolumeID.Value))
+			return
+		}
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get volume: %s", err))
+		return
+	}
+
+	if volume.AttachedTo.ID == 0 {
+		removeGone(ctx, response, fmt.Sprintf("attachment of volume %d", state.VolumeID.Value))
 		return
 	}
 
@@ -139,17 +163,24 @@ func (r computeVolumeAttachmentResource) Update(ctx context.Context, request tfs
 		return
 	}
 
-	var config computeVolumeAttachmentResourceData
-	diagnostics = request.Config.Get(ctx, &config)
+	var plan computeVolumeAttachmentResourceData
+	diagnostics = request.Plan.Get(ctx, &plan)
 	response.Diagnostics.Append(diagnostics...)
 	if response.Diagnostics.HasError() {
 		return
 	}
 
 	// detach the volume from the current server
-	err := compute.NewVolumeService(r.client).Detach(ctx, int(state.VolumeID.Value), int(state.ServerID.Value))
+	err := retryDelete(ctx, "detach volume", func() error {
+		return compute.NewVolumeService(r.client).Detach(ctx, int(state.VolumeID.Value), int(state.ServerID.Value))
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to detach volume from current server: %s", err))
+		return
+	}
+
+	if _, err := r.waitForVolumeStatus(ctx, "available", int(state.VolumeID.Value), compute.VolumeStatusAvailable); err != nil {
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for volume detachment: %s", err))
 		return
 	}
 
@@ -157,12 +188,22 @@ func (r computeVolumeAttachmentResource) Update(ctx context.Context, request tfs
 
 	// attach the volume to the new server
 	attach := compute.VolumeAttach{
-		InstanceID: int(config.ServerID.Value),
+		InstanceID: int(plan.ServerID.Value),
 	}
 
-	volume, err := compute.NewVolumeService(r.client).Attach(ctx, int(state.VolumeID.Value), attach)
+	var volume compute.Volume
+	err = retry(ctx, "attach volume", func() (err error) {
+		volume, err = compute.NewVolumeService(r.client).Attach(ctx, int(state.VolumeID.Value), attach)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to attach volume to new server: %s", err))
+		return
+	}
+
+	volume, err = r.waitForVolumeStatus(ctx, "in use", int(state.VolumeID.Value), compute.VolumeStatusInUse)
+	if err != nil {
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for volume attachment: %s", err))
 		return
 	}
 
@@ -182,11 +223,45 @@ func (r computeVolumeAttachmentResource) Delete(ctx context.Context, request tfs
 		return
 	}
 
-	err := compute.NewVolumeService(r.client).Detach(ctx, int(state.VolumeID.Value), int(state.ServerID.Value))
+	err := retryDelete(ctx, "detach volume", func() error {
+		return compute.NewVolumeService(r.client).Detach(ctx, int(state.VolumeID.Value), int(state.ServerID.Value))
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to detach volume: %s", err))
 		return
 	}
+
+	if _, err := r.waitForVolumeStatus(ctx, "available", int(state.VolumeID.Value), compute.VolumeStatusAvailable); err != nil {
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for volume detachment: %s", err))
+		return
+	}
+}
+
+// the backend waits only on the detach side, and only for 30 seconds; until the
+// volume settles, follow-up attach/expand/delete calls are refused
+func (r computeVolumeAttachmentResource) waitForVolumeStatus(ctx context.Context, status string, volumeID, wantStatus int) (volume compute.Volume, err error) {
+	err = waitFor(ctx, volumeSettleTimeout, defaultWaitInterval, fmt.Sprintf("volume %d to be %s", volumeID, status), func(ctx context.Context) (bool, error) {
+		got, err := compute.NewVolumeService(r.client).Get(ctx, volumeID)
+		if err != nil {
+			// a volume that is gone counts as detached
+			if wantStatus == compute.VolumeStatusAvailable && statusCode(err) == http.StatusNotFound {
+				return true, nil
+			}
+			return false, err
+		}
+		volume = got
+
+		switch volume.Status.ID {
+		case wantStatus:
+			return true, nil
+		case compute.VolumeStatusError:
+			return false, fmt.Errorf("volume %d is in error state", volumeID)
+		default:
+			return false, nil
+		}
+	})
+
+	return volume, err
 }
 
 func (r computeVolumeAttachmentResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {

@@ -22,7 +22,7 @@ description: |-
 
 ### Optional
 
-- `network_id` (Number) unique identifier of the initial network
+- `network_id` (Number) unique identifier of the initial network (the organisation's default network when omitted)
 - `private_ip` (String) initial private ip of the load balancer
 
 ### Read-Only

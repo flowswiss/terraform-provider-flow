@@ -7,13 +7,15 @@ import (
 	"github.com/flowswiss/goclient"
 	"github.com/flowswiss/goclient/compute"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
-	_ tfsdk.ResourceType = (*computeElasticIPServerAttachmentResourceType)(nil)
-	_ tfsdk.Resource     = (*computeElasticIPServerAttachmentResource)(nil)
+	_ tfsdk.ResourceType            = (*computeElasticIPServerAttachmentResourceType)(nil)
+	_ tfsdk.Resource                = (*computeElasticIPServerAttachmentResource)(nil)
+	_ tfsdk.ResourceWithImportState = (*computeElasticIPServerAttachmentResource)(nil)
 )
 
 type computeElasticIPServerAttachmentResourceData struct {
@@ -40,6 +42,7 @@ type computeElasticIPServerAttachmentResourceType struct{}
 
 func (c computeElasticIPServerAttachmentResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
+		MarkdownDescription: "Import: `terraform import flow_compute_elastic_ip_server_attachment.<name> <server_id>:<elastic_ip_id>`",
 		Attributes: map[string]tfsdk.Attribute{
 			"server_id": {
 				Type:                types.Int64Type,
@@ -51,7 +54,7 @@ func (c computeElasticIPServerAttachmentResourceType) GetSchema(ctx context.Cont
 			},
 			"network_interface_id": {
 				Type:                types.Int64Type,
-				MarkdownDescription: "unique identifier of the network interface of the server to attach the elastic ip to",
+				MarkdownDescription: "unique identifier of the network interface to attach the elastic ip to — `flow_compute_server.<name>.network_interface_id` for a server's primary interface",
 				Required:            true,
 				PlanModifiers: tfsdk.AttributePlanModifiers{
 					tfsdk.RequiresReplace(),
@@ -104,7 +107,11 @@ func (c computeElasticIPServerAttachmentResource) Create(ctx context.Context, re
 		NetworkInterfaceID: int(config.NetworkInterfaceID.Value),
 	}
 
-	elasticIP, err := compute.NewServerElasticIPService(c.client, serverID).Attach(ctx, attach)
+	var elasticIP compute.ElasticIP
+	err := retry(ctx, "attach elastic ip", func() (err error) {
+		elasticIP, err = compute.NewServerElasticIPService(c.client, serverID).Attach(ctx, attach)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to attach elastic ip: %s", err))
 		return
@@ -133,17 +140,31 @@ func (c computeElasticIPServerAttachmentResource) Read(ctx context.Context, requ
 
 	server, err := compute.NewServerService(c.client).Get(ctx, int(state.ServerID.Value))
 	if err != nil {
+		if isNotFound(err) {
+			removeGone(ctx, response, fmt.Sprintf("server %d", state.ServerID.Value))
+			return
+		}
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get server: %s", err))
 		return
 	}
 
-	elasticIP, diagnostics := findComputeElasticIP(ctx, c.elasticIPService, int(state.ElasticIPID.Value))
-	response.Diagnostics.Append(diagnostics...)
-	if response.Diagnostics.HasError() {
+	elasticIP, found, err := findComputeElasticIP(ctx, c.elasticIPService, int(state.ElasticIPID.Value))
+	if err != nil {
+		response.Diagnostics.AddError("Client Error", err.Error())
+		return
+	}
+	if !found {
+		removeGone(ctx, response, fmt.Sprintf("elastic ip %d", state.ElasticIPID.Value))
 		return
 	}
 
 	state.FromEntity(server, elasticIP)
+
+	// no interface of the server carries the ip any more — detached outside terraform
+	if state.NetworkInterfaceID.Null {
+		removeGone(ctx, response, fmt.Sprintf("attachment of elastic ip %d to server %d", state.ElasticIPID.Value, state.ServerID.Value))
+		return
+	}
 
 	diagnostics = response.State.Set(ctx, state)
 	response.Diagnostics.Append(diagnostics...)
@@ -161,9 +182,15 @@ func (c computeElasticIPServerAttachmentResource) Delete(ctx context.Context, re
 		return
 	}
 
-	err := compute.NewServerElasticIPService(c.client, int(state.ServerID.Value)).Detach(ctx, int(state.ElasticIPID.Value))
+	err := retryDelete(ctx, "detach elastic ip", func() error {
+		return compute.NewServerElasticIPService(c.client, int(state.ServerID.Value)).Detach(ctx, int(state.ElasticIPID.Value))
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to detach elastic ip: %s", err))
 		return
 	}
+}
+
+func (c computeElasticIPServerAttachmentResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
+	importStateCompositeInt64IDs(ctx, request, response, path.Root("server_id"), path.Root("elastic_ip_id"))
 }

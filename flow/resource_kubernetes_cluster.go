@@ -3,8 +3,10 @@ package flow
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/flowswiss/goclient/common"
+	"github.com/flowswiss/goclient/compute"
 	"github.com/flowswiss/goclient/kubernetes"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -117,6 +119,7 @@ func (k kubernetesClusterResourceType) GetSchema(ctx context.Context) (tfsdk.Sch
 				Computed:            true,
 				PlanModifiers: tfsdk.AttributePlanModifiers{
 					tfsdk.RequiresReplace(),
+					tfsdk.UseStateForUnknown(),
 				},
 			},
 			"public_address": {
@@ -198,22 +201,28 @@ func (k kubernetesClusterResource) Create(ctx context.Context, request tfsdk.Cre
 		create.AttachExternalIP = false
 	}
 
-	ordering, err := k.clusterService.Create(ctx, create)
+	var ordering common.Ordering
+	err := retryCreate(ctx, "create cluster", func() (err error) {
+		ordering, err = k.clusterService.Create(ctx, create)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to create cluster: %s", err))
 		return
 	}
 
-	order, err := k.orderService.WaitUntilProcessed(ctx, ordering)
+	order, err := waitForOrder(ctx, k.orderService, ordering)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for cluster creation: %s", err))
 		return
 	}
 
-	cluster, err := k.clusterService.Get(ctx, order.Product.ID)
+	cluster, err := waitForClusterReady(ctx, k.clusterService, order.Product.ID)
 	if err != nil {
-		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get cluster: %s", err))
-		return
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for cluster to be ready: %s", err))
+		if cluster.ID == 0 {
+			return
+		}
 	}
 
 	// set state of the resource
@@ -234,6 +243,10 @@ func (k kubernetesClusterResource) Read(ctx context.Context, request tfsdk.ReadR
 
 	cluster, err := k.clusterService.Get(ctx, int(state.ID.Value))
 	if err != nil {
+		if isNotFound(err) {
+			removeGone(ctx, response, fmt.Sprintf("cluster %d", state.ID.Value))
+			return
+		}
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get cluster: %s", err))
 		return
 	}
@@ -252,56 +265,81 @@ func (k kubernetesClusterResource) Update(ctx context.Context, request tfsdk.Upd
 		return
 	}
 
-	var config kubernetesClusterResourceData
-	diagnostics = request.Config.Get(ctx, &config)
+	var plan kubernetesClusterResourceData
+	diagnostics = request.Plan.Get(ctx, &plan)
 	response.Diagnostics.Append(diagnostics...)
 	if response.Diagnostics.HasError() {
 		return
 	}
 
-	if config.Name.Value != state.Name.Value {
+	if plan.Name.Value != state.Name.Value {
+		// no unlock wait here — the name update is not guarded by the action , unlike configuration and flavor
 		update := kubernetes.ClusterUpdate{
-			Name: config.Name.Value,
+			Name: plan.Name.Value,
 		}
 
-		_, err := k.clusterService.Update(ctx, int(state.ID.Value), update)
+		err := retry(ctx, "update cluster", func() (err error) {
+			_, err = k.clusterService.Update(ctx, int(state.ID.Value), update)
+			return err
+		})
 		if err != nil {
 			response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to update cluster: %s", err))
 			return
 		}
 	}
 
-	if config.VersionID.Value != state.VersionID.Value {
-		update := kubernetes.ClusterConfiguration{
-			VersionID: int(config.VersionID.Value),
-			// TODO configuration options
+	if !plan.VersionID.Unknown && plan.VersionID.Value != state.VersionID.Value {
+		if _, err := k.waitForClusterUnlocked(ctx, int(state.ID.Value)); err != nil {
+			response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for cluster to be unlocked: %s", err))
+			return
 		}
 
-		_, err := k.clusterService.UpdateConfiguration(ctx, int(state.ID.Value), update)
+		current, err := k.clusterService.GetConfiguration(ctx, int(state.ID.Value))
+		if err != nil {
+			response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to read cluster configuration: %s", err))
+			return
+		}
+		update := kubernetes.ClusterConfiguration{
+			VersionID: int(plan.VersionID.Value),
+			Variables: current.Variables,
+		}
+
+		err = retry(ctx, "update cluster configuration", func() (err error) {
+			_, err = k.clusterService.UpdateConfiguration(ctx, int(state.ID.Value), update)
+			return err
+		})
 		if err != nil {
 			response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to change cluster configuration: %s", err))
 			return
 		}
 	}
 
-	if config.NodeCount.Value != state.NodeCount.Value || config.NodeProductID.Value != state.NodeProductID.Value {
+	if plan.NodeCount.Value != state.NodeCount.Value || plan.NodeProductID.Value != state.NodeProductID.Value {
+		if _, err := k.waitForClusterUnlocked(ctx, int(state.ID.Value)); err != nil {
+			response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for cluster to be unlocked: %s", err))
+			return
+		}
+
 		update := kubernetes.ClusterUpdateFlavor{
 			Worker: kubernetes.ClusterWorkerUpdate{
-				ProductID: int(config.NodeProductID.Value),
-				Count:     int(config.NodeCount.Value),
+				ProductID: int(plan.NodeProductID.Value),
+				Count:     int(plan.NodeCount.Value),
 			},
 		}
 
-		_, err := k.clusterService.UpdateFlavor(ctx, int(state.ID.Value), update)
+		err := retry(ctx, "update cluster flavor", func() (err error) {
+			_, err = k.clusterService.UpdateFlavor(ctx, int(state.ID.Value), update)
+			return err
+		})
 		if err != nil {
 			response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to change cluster flavor: %s", err))
 			return
 		}
 	}
 
-	cluster, err := k.clusterService.Get(ctx, int(state.ID.Value))
+	cluster, err := k.waitForClusterUnlocked(ctx, int(state.ID.Value))
 	if err != nil {
-		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get cluster: %s", err))
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for cluster to be unlocked: %s", err))
 		return
 	}
 
@@ -319,11 +357,60 @@ func (k kubernetesClusterResource) Delete(ctx context.Context, request tfsdk.Del
 		return
 	}
 
-	err := k.clusterService.Delete(ctx, int(state.ID.Value))
+	err := retryDelete(ctx, "delete cluster", func() error {
+		return k.clusterService.Delete(ctx, int(state.ID.Value))
+	})
 	if err != nil {
-		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete router: %s", err))
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete cluster: %s", err))
 		return
 	}
+
+	if err := k.waitForClusterGone(ctx, int(state.ID.Value)); err != nil {
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for cluster deletion: %s", err))
+		return
+	}
+}
+
+// the create order succeeds while the cluster is still provisioning — until it
+// is unlocked and healthy, updates are refused
+func waitForClusterReady(ctx context.Context, service kubernetes.ClusterService, clusterID int) (cluster kubernetes.Cluster, err error) {
+	err = waitFor(ctx, clusterWaitTimeout, defaultWaitInterval, fmt.Sprintf("cluster %d to be ready", clusterID), func(ctx context.Context) (bool, error) {
+		got, err := service.Get(ctx, clusterID)
+		if err != nil {
+			return false, err
+		}
+		cluster = got
+		return !cluster.Locked && cluster.Status.ID == compute.ClusterStatusHealthy, nil
+	})
+
+	return cluster, err
+}
+
+// configuration and flavor updates run as an async action that keeps the
+// cluster locked after the call returns — any update in that window is refused
+func (k kubernetesClusterResource) waitForClusterUnlocked(ctx context.Context, clusterID int) (cluster kubernetes.Cluster, err error) {
+	err = waitFor(ctx, clusterWaitTimeout, defaultWaitInterval, fmt.Sprintf("cluster %d to be unlocked", clusterID), func(ctx context.Context) (bool, error) {
+		got, err := k.clusterService.Get(ctx, clusterID)
+		if err != nil {
+			return false, err
+		}
+		cluster = got
+		return !cluster.Locked, nil
+	})
+
+	return cluster, err
+}
+
+// cluster deletion is queued — the delete call returns while the cluster still
+// exists, and deleting the network is refused until it is gone
+func (k kubernetesClusterResource) waitForClusterGone(ctx context.Context, clusterID int) error {
+	return waitFor(ctx, clusterWaitTimeout, defaultWaitInterval, fmt.Sprintf("cluster %d to be gone", clusterID), func(ctx context.Context) (bool, error) {
+		_, err := k.clusterService.Get(ctx, clusterID)
+		if statusCode(err) == http.StatusNotFound {
+			return true, nil
+		}
+		return false, err
+	})
 }
 
 func (k kubernetesClusterResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {

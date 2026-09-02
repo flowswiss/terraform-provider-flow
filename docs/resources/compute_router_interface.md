@@ -3,12 +3,12 @@
 page_title: "flow_compute_router_interface Resource - terraform-provider-flow"
 subcategory: ""
 description: |-
-  
+  Import: terraform import flow_compute_router_interface.<name> <router_id>:<id>
 ---
 
 # flow_compute_router_interface (Resource)
 
-
+Import: `terraform import flow_compute_router_interface.<name> <router_id>:<id>`
 
 
 
