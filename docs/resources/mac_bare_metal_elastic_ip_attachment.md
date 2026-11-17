@@ -3,12 +3,12 @@
 page_title: "flow_mac_bare_metal_elastic_ip_attachment Resource - terraform-provider-flow"
 subcategory: ""
 description: |-
-  
+  Import: terraform import flow_mac_bare_metal_elastic_ip_device_attachment.<name> <device_id>:<elastic_ip_id>
 ---
 
 # flow_mac_bare_metal_elastic_ip_attachment (Resource)
 
-
+Import: `terraform import flow_mac_bare_metal_elastic_ip_device_attachment.<name> <device_id>:<elastic_ip_id>`
 
 
 

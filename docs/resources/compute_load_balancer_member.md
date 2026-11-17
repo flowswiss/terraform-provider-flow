@@ -3,12 +3,12 @@
 page_title: "flow_compute_load_balancer_member Resource - terraform-provider-flow"
 subcategory: ""
 description: |-
-  
+  Import: terraform import flow_compute_load_balancer_member.<name> <load_balancer_id>:<pool_id>:<id>
 ---
 
 # flow_compute_load_balancer_member (Resource)
 
-
+Import: `terraform import flow_compute_load_balancer_member.<name> <load_balancer_id>:<pool_id>:<id>`
 
 
 

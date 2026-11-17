@@ -118,7 +118,11 @@ func (c computeRouterResource) Create(ctx context.Context, request tfsdk.CreateR
 		create.Public = config.Public.Value
 	}
 
-	router, err := c.routerService.Create(ctx, create)
+	var router compute.Router
+	err := retryCreate(ctx, "create router", func() (err error) {
+		router, err = c.routerService.Create(ctx, create)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to create router: %s", err))
 		return
@@ -141,6 +145,10 @@ func (c computeRouterResource) Read(ctx context.Context, request tfsdk.ReadResou
 
 	router, err := c.routerService.Get(ctx, int(state.ID.Value))
 	if err != nil {
+		if isNotFound(err) {
+			removeGone(ctx, response, fmt.Sprintf("router %d", state.ID.Value))
+			return
+		}
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get router: %s", err))
 		return
 	}
@@ -171,7 +179,11 @@ func (c computeRouterResource) Update(ctx context.Context, request tfsdk.UpdateR
 		Public: config.Public.Value,
 	}
 
-	router, err := c.routerService.Update(ctx, int(state.ID.Value), update)
+	var router compute.Router
+	err := retry(ctx, "update router", func() (err error) {
+		router, err = c.routerService.Update(ctx, int(state.ID.Value), update)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to update router: %s", err))
 		return
@@ -191,7 +203,9 @@ func (c computeRouterResource) Delete(ctx context.Context, request tfsdk.DeleteR
 		return
 	}
 
-	err := c.routerService.Delete(ctx, int(state.ID.Value))
+	err := retryDelete(ctx, "delete router", func() error {
+		return c.routerService.Delete(ctx, int(state.ID.Value))
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete router: %s", err))
 		return

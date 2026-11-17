@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/flowswiss/goclient"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -52,8 +52,9 @@ type provider struct {
 }
 
 type providerData struct {
-	Token    types.String `tfsdk:"token"`
-	Endpoint types.String `tfsdk:"endpoint"`
+	Token        types.String `tfsdk:"token"`
+	Endpoint     types.String `tfsdk:"endpoint"`
+	RetryTimeout types.String `tfsdk:"retry_timeout"`
 }
 
 func (p *provider) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
@@ -68,6 +69,11 @@ func (p *provider) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostic
 			"endpoint": {
 				Type:                types.StringType,
 				MarkdownDescription: "endpoint for the flow api",
+				Optional:            true,
+			},
+			"retry_timeout": {
+				Type:                types.StringType,
+				MarkdownDescription: "how long a failing api call is retried before the error is reported, as a duration such as `90s` or `2m` (default `90s`, `0` disables retries). can also be set with the `FLOW_RETRY_TIMEOUT` environment variable",
 				Optional:            true,
 			},
 		},
@@ -106,14 +112,32 @@ func (p *provider) Configure(ctx context.Context, request tfsdk.ConfigureProvide
 		}
 	}
 
+	if data.RetryTimeout.Null {
+		if val, ok := os.LookupEnv("FLOW_RETRY_TIMEOUT"); ok {
+			data.RetryTimeout = types.String{Value: val}
+		}
+	}
+
+	if !data.RetryTimeout.Null {
+		timeout, err := parseRetryTimeout(data.RetryTimeout.Value)
+		if err != nil {
+			response.Diagnostics.AddAttributeError(
+				path.Root("retry_timeout"),
+				"Invalid Retry Timeout",
+				err.Error(),
+			)
+			return
+		}
+
+		defaultRetryPolicy.Timeout = timeout
+	}
+
 	p.client = goclient.NewClient(
 		goclient.WithToken(data.Token.Value),
 		goclient.WithBase(data.Endpoint.Value),
 		goclient.WithUserAgent(fmt.Sprintf("terraform-provider-flow/%s", p.version)),
 
-		goclient.WithHTTPClientOption(func(c *http.Client) {
-			c.Transport = logTransport{base: c.Transport}
-		}),
+		goclient.WithHTTPClientOption(installTransport),
 	)
 
 	p.configured = true
@@ -200,33 +224,6 @@ func convertToLocalProviderType(p tfsdk.Provider) (prov *provider, diagnostics d
 	return
 }
 
-func waitForCondition(ctx context.Context, check func(ctx context.Context) (bool, diag.Diagnostics)) (diagnostics diag.Diagnostics) {
-	done, d := check(ctx)
-	diagnostics.Append(d...)
-	if done || diagnostics.HasError() {
-		return
-	}
-
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-
-		case <-ctx.Done():
-			diagnostics.AddError("Timeout", "Timeout while waiting for condition")
-			return
-		}
-
-		done, d = check(ctx)
-		diagnostics.Append(d...)
-		if done || diagnostics.HasError() {
-			return
-		}
-	}
-}
-
 type logTransport struct {
 	base http.RoundTripper
 }
@@ -258,4 +255,24 @@ func (l logTransport) transport() http.RoundTripper {
 	}
 
 	return l.base
+}
+
+func installTransport(c *http.Client) {
+	base := http.DefaultTransport.(*http.Transport).Clone()
+	base.ResponseHeaderTimeout = responseHeaderTimeout
+
+	// goclient's WithToken put its auth transport in front of the default one —
+	// replacing it drops the authorization header
+	var inner http.RoundTripper = base
+	switch t := c.Transport.(type) {
+	case goclient.AuthTransport:
+		t.Base = base
+		inner = t
+	case nil:
+	default:
+		inner = t
+	}
+
+	// the read retry sits outside the log transport so every attempt is traced
+	c.Transport = readRetryTransport{base: logTransport{base: inner}}
 }

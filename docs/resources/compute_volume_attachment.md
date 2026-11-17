@@ -17,5 +17,5 @@ description: |-
 
 ### Required
 
-- `server_id` (Number) identifier of the server for the attachment
-- `volume_id` (Number) identifier of the volume for the attachment
+- `server_id` (Number) identifier of the server for the attachment — changing it moves the volume to the other server
+- `volume_id` (Number) identifier of the volume for the attachment — changing it replaces the attachment (detach, attach), the volumes themselves are not touched

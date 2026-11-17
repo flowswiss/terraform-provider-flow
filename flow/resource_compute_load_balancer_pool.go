@@ -7,13 +7,15 @@ import (
 
 	"github.com/flowswiss/goclient/compute"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
-	_ tfsdk.ResourceType = (*computeLoadBalancerPoolResourceType)(nil)
-	_ tfsdk.Resource     = (*computeLoadBalancerPoolResource)(nil)
+	_ tfsdk.ResourceType            = (*computeLoadBalancerPoolResourceType)(nil)
+	_ tfsdk.Resource                = (*computeLoadBalancerPoolResource)(nil)
+	_ tfsdk.ResourceWithImportState = (*computeLoadBalancerPoolResource)(nil)
 )
 
 type computeLoadBalancerHTTPHealthCheckResourceData struct {
@@ -89,6 +91,7 @@ type computeLoadBalancerPoolResourceType struct{}
 
 func (c computeLoadBalancerPoolResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
+		MarkdownDescription: "Import: `terraform import flow_compute_load_balancer_pool.<name> <load_balancer_id>:<id>`",
 		Attributes: map[string]tfsdk.Attribute{
 			"id": {
 				Type:                types.Int64Type,
@@ -272,15 +275,13 @@ func (c computeLoadBalancerPoolResource) Create(ctx context.Context, request tfs
 		HealthCheck:          healthCheck,
 	}
 
-	pool, err := c.loadBalancerService.Pools(loadBalancerID).Create(ctx, create)
+	var pool compute.LoadBalancerPool
+	err := retryCreate(ctx, "create load balancer pool", func() (err error) {
+		pool, err = c.loadBalancerService.Pools(loadBalancerID).Create(ctx, create)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to create load balancer pool: %s", err))
-		return
-	}
-
-	err = c.loadBalancerService.WaitUntilMutable(ctx, loadBalancerID)
-	if err != nil {
-		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to wait until load balancer is mutable: %s", err))
 		return
 	}
 
@@ -289,6 +290,11 @@ func (c computeLoadBalancerPoolResource) Create(ctx context.Context, request tfs
 
 	diagnostics = response.State.Set(ctx, state)
 	response.Diagnostics.Append(diagnostics...)
+
+	_, err = waitForLoadBalancerMutable(ctx, c.loadBalancerService, loadBalancerID)
+	if err != nil {
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for load balancer to be mutable: %s", err))
+	}
 }
 
 func (c computeLoadBalancerPoolResource) Read(ctx context.Context, request tfsdk.ReadResourceRequest, response *tfsdk.ReadResourceResponse) {
@@ -303,6 +309,10 @@ func (c computeLoadBalancerPoolResource) Read(ctx context.Context, request tfsdk
 
 	pool, err := c.loadBalancerService.Pools(loadBalancerID).Get(ctx, int(state.ID.Value))
 	if err != nil {
+		if isNotFound(err) {
+			removeGone(ctx, response, fmt.Sprintf("load balancer pool %d", state.ID.Value))
+			return
+		}
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get load balancer pool: %s", err))
 		return
 	}
@@ -344,15 +354,19 @@ func (c computeLoadBalancerPoolResource) Update(ctx context.Context, request tfs
 		HealthCheck:          healthCheck,
 	}
 
-	pool, err := c.loadBalancerService.Pools(loadBalancerID).Update(ctx, poolID, update)
+	var pool compute.LoadBalancerPool
+	err := retry(ctx, "update load balancer pool", func() (err error) {
+		pool, err = c.loadBalancerService.Pools(loadBalancerID).Update(ctx, poolID, update)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to update load balancer pool: %s", err))
 		return
 	}
 
-	err = c.loadBalancerService.WaitUntilMutable(ctx, loadBalancerID)
+	_, err = waitForLoadBalancerMutable(ctx, c.loadBalancerService, loadBalancerID)
 	if err != nil {
-		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to wait until load balancer is mutable: %s", err))
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for load balancer to be mutable: %s", err))
 		return
 	}
 
@@ -373,15 +387,17 @@ func (c computeLoadBalancerPoolResource) Delete(ctx context.Context, request tfs
 	loadBalancerID := int(state.LoadBalancerID.Value)
 	poolID := int(state.ID.Value)
 
-	err := c.loadBalancerService.Pools(loadBalancerID).Delete(ctx, poolID)
+	err := retryDelete(ctx, "delete load balancer pool", func() error {
+		return c.loadBalancerService.Pools(loadBalancerID).Delete(ctx, poolID)
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete load balancer pool: %s", err))
 		return
 	}
 
-	err = c.loadBalancerService.WaitUntilMutable(ctx, loadBalancerID)
+	_, err = waitForLoadBalancerMutable(ctx, c.loadBalancerService, loadBalancerID)
 	if err != nil {
-		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to wait until load balancer is mutable: %s", err))
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for load balancer to be mutable: %s", err))
 		return
 	}
 }
@@ -424,4 +440,8 @@ func convertHealthCheckConfigToAPIOptions(config computeLoadBalancerHealthCheckR
 	}
 
 	return
+}
+
+func (c computeLoadBalancerPoolResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
+	importStateCompositeInt64IDs(ctx, request, response, path.Root("load_balancer_id"), path.Root("id"))
 }

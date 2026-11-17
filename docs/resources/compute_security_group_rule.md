@@ -3,12 +3,12 @@
 page_title: "flow_compute_security_group_rule Resource - terraform-provider-flow"
 subcategory: ""
 description: |-
-  
+  Import: terraform import flow_compute_security_group_rule.<name> <security_group_id>:<id>
 ---
 
 # flow_compute_security_group_rule (Resource)
 
-
+Import: `terraform import flow_compute_security_group_rule.<name> <security_group_id>:<id>`
 
 
 

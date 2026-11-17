@@ -173,7 +173,11 @@ func (c computeNetworkResource) Create(ctx context.Context, request tfsdk.Create
 		create.AllocationPoolEnd = config.AllocationPool.End.Value
 	}
 
-	network, err := c.networkService.Create(ctx, create)
+	var network compute.Network
+	err := retryCreate(ctx, "create network", func() (err error) {
+		network, err = c.networkService.Create(ctx, create)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to create network: %s", err))
 		return
@@ -196,6 +200,10 @@ func (c computeNetworkResource) Read(ctx context.Context, request tfsdk.ReadReso
 
 	network, err := c.networkService.Get(ctx, int(state.ID.Value))
 	if err != nil {
+		if isNotFound(err) {
+			removeGone(ctx, response, fmt.Sprintf("network %d", state.ID.Value))
+			return
+		}
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get network: %s", err))
 		return
 	}
@@ -238,7 +246,11 @@ func (c computeNetworkResource) Update(ctx context.Context, request tfsdk.Update
 		update.AllocationPoolEnd = config.AllocationPool.End.Value
 	}
 
-	network, err := c.networkService.Update(ctx, int(state.ID.Value), update)
+	var network compute.Network
+	err := retry(ctx, "update network", func() (err error) {
+		network, err = c.networkService.Update(ctx, int(state.ID.Value), update)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to update network: %s", err))
 		return
@@ -258,7 +270,9 @@ func (c computeNetworkResource) Delete(ctx context.Context, request tfsdk.Delete
 		return
 	}
 
-	err := c.networkService.Delete(ctx, int(state.ID.Value))
+	err := retryDelete(ctx, "delete network", func() error {
+		return c.networkService.Delete(ctx, int(state.ID.Value))
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete network: %s", err))
 		return

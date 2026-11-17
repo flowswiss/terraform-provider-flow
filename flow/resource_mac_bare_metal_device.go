@@ -144,7 +144,7 @@ func (m macBareMetalDeviceResource) Create(ctx context.Context, request tfsdk.Cr
 		return
 	}
 
-	order, err := m.orderService.WaitUntilProcessed(ctx, ordering)
+	order, err := waitForOrder(ctx, m.orderService, ordering)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for device creation: %s", err))
 		return

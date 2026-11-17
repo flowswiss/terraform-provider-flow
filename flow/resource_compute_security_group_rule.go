@@ -7,6 +7,7 @@ import (
 	"github.com/flowswiss/goclient"
 	"github.com/flowswiss/goclient/compute"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
@@ -16,6 +17,7 @@ import (
 var (
 	_ tfsdk.ResourceType                 = (*computeSecurityGroupRuleResourceType)(nil)
 	_ tfsdk.Resource                     = (*computeSecurityGroupRuleResource)(nil)
+	_ tfsdk.ResourceWithImportState      = (*computeSecurityGroupRuleResource)(nil)
 	_ tfsdk.ResourceWithConfigValidators = (*computeSecurityGroupRuleResource)(nil)
 )
 
@@ -120,6 +122,7 @@ type computeSecurityGroupRuleResourceType struct{}
 
 func (c computeSecurityGroupRuleResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
+		MarkdownDescription: "Import: `terraform import flow_compute_security_group_rule.<name> <security_group_id>:<id>`",
 		Attributes: map[string]tfsdk.Attribute{
 			"id": {
 				Type:                types.Int64Type,
@@ -253,7 +256,11 @@ func (c computeSecurityGroupRuleResource) Create(ctx context.Context, request tf
 		create.ICMPCode = int(config.ICMP.Code.Value)
 	}
 
-	rule, err := c.securityGroupService.Rules(securityGroupID).Create(ctx, create)
+	var rule compute.SecurityGroupRule
+	err := retryCreate(ctx, "create security group rule", func() (err error) {
+		rule, err = c.securityGroupService.Rules(securityGroupID).Create(ctx, create)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to create security group rule: %s", err))
 		return
@@ -279,6 +286,10 @@ func (c computeSecurityGroupRuleResource) Read(ctx context.Context, request tfsd
 
 	list, err := c.securityGroupService.Rules(securityGroupID).List(ctx, goclient.Cursor{NoFilter: 1})
 	if err != nil {
+		if isNotFound(err) {
+			removeGone(ctx, response, fmt.Sprintf("security group %d", securityGroupID))
+			return
+		}
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list security group rules: %s", err))
 		return
 	}
@@ -293,7 +304,7 @@ func (c computeSecurityGroupRuleResource) Read(ctx context.Context, request tfsd
 		}
 	}
 
-	response.Diagnostics.AddError("Not Found", fmt.Sprintf("security group rule %d could not be found", ruleID))
+	removeGone(ctx, response, fmt.Sprintf("security group rule %d", ruleID))
 }
 
 func (c computeSecurityGroupRuleResource) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
@@ -331,7 +342,11 @@ func (c computeSecurityGroupRuleResource) Update(ctx context.Context, request tf
 		update.ICMPCode = int(config.ICMP.Code.Value)
 	}
 
-	rule, err := c.securityGroupService.Rules(securityGroupID).Update(ctx, ruleID, update)
+	var rule compute.SecurityGroupRule
+	err := retry(ctx, "update security group rule", func() (err error) {
+		rule, err = c.securityGroupService.Rules(securityGroupID).Update(ctx, ruleID, update)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to update security group rule: %s", err))
 		return
@@ -354,7 +369,9 @@ func (c computeSecurityGroupRuleResource) Delete(ctx context.Context, request tf
 	securityGroupID := int(state.SecurityGroupID.Value)
 	ruleID := int(state.ID.Value)
 
-	err := c.securityGroupService.Rules(securityGroupID).Delete(ctx, ruleID)
+	err := retryDelete(ctx, "delete security group rule", func() error {
+		return c.securityGroupService.Rules(securityGroupID).Delete(ctx, ruleID)
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete security group rule: %s", err))
 		return
@@ -366,4 +383,8 @@ func (c computeSecurityGroupRuleResource) ConfigValidators(ctx context.Context) 
 		validators.MutuallyExclusive("port_range", "icmp"),
 		validators.MutuallyExclusive("ip_range", "remote_security_group_id"),
 	}
+}
+
+func (c computeSecurityGroupRuleResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
+	importStateCompositeInt64IDs(ctx, request, response, path.Root("security_group_id"), path.Root("id"))
 }

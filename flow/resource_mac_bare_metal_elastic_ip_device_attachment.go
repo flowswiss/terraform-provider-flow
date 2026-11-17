@@ -7,13 +7,15 @@ import (
 	"github.com/flowswiss/goclient"
 	"github.com/flowswiss/goclient/macbaremetal"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
-	_ tfsdk.ResourceType = (*macBareMetalElasticIPDeviceAttachmentResourceType)(nil)
-	_ tfsdk.Resource     = (*macBareMetalElasticIPDeviceAttachmentResource)(nil)
+	_ tfsdk.ResourceType            = (*macBareMetalElasticIPDeviceAttachmentResourceType)(nil)
+	_ tfsdk.Resource                = (*macBareMetalElasticIPDeviceAttachmentResource)(nil)
+	_ tfsdk.ResourceWithImportState = (*macBareMetalElasticIPDeviceAttachmentResource)(nil)
 )
 
 type macBareMetalElasticIPDeviceAttachmentResourceData struct {
@@ -41,6 +43,7 @@ type macBareMetalElasticIPDeviceAttachmentResourceType struct{}
 
 func (m macBareMetalElasticIPDeviceAttachmentResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
+		MarkdownDescription: "Import: `terraform import flow_mac_bare_metal_elastic_ip_device_attachment.<name> <device_id>:<elastic_ip_id>`",
 		Attributes: map[string]tfsdk.Attribute{
 			"device_id": {
 				Type:                types.Int64Type,
@@ -167,4 +170,8 @@ func (c macBareMetalElasticIPDeviceAttachmentResource) Delete(ctx context.Contex
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to detach elastic ip: %s", err))
 		return
 	}
+}
+
+func (c macBareMetalElasticIPDeviceAttachmentResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
+	importStateCompositeInt64IDs(ctx, request, response, path.Root("device_id"), path.Root("elastic_ip_id"))
 }

@@ -7,13 +7,15 @@ import (
 	"github.com/flowswiss/goclient"
 	"github.com/flowswiss/goclient/compute"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
-	_ tfsdk.ResourceType = (*computeRouterRouteResourceType)(nil)
-	_ tfsdk.Resource     = (*computeRouterRouteResource)(nil)
+	_ tfsdk.ResourceType            = (*computeRouterRouteResourceType)(nil)
+	_ tfsdk.Resource                = (*computeRouterRouteResource)(nil)
+	_ tfsdk.ResourceWithImportState = (*computeRouterRouteResource)(nil)
 )
 
 type computeRouterRouteResourceData struct {
@@ -34,6 +36,7 @@ type computeRouterRouteResourceType struct{}
 
 func (c computeRouterRouteResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
+		MarkdownDescription: "Import: `terraform import flow_compute_router_route.<name> <router_id>:<id>`",
 		Attributes: map[string]tfsdk.Attribute{
 			"id": {
 				Type:                types.Int64Type,
@@ -100,7 +103,11 @@ func (c computeRouterRouteResource) Create(ctx context.Context, request tfsdk.Cr
 		NextHop:     config.NextHop.Value,
 	}
 
-	route, err := compute.NewRouteService(c.client, routerID).Create(ctx, create)
+	var route compute.Route
+	err := retryCreate(ctx, "create route", func() (err error) {
+		route, err = compute.NewRouteService(c.client, routerID).Create(ctx, create)
+		return err
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to create route: %s", err))
 		return
@@ -125,6 +132,10 @@ func (c computeRouterRouteResource) Read(ctx context.Context, request tfsdk.Read
 
 	list, err := compute.NewRouteService(c.client, routerID).List(ctx, goclient.Cursor{NoFilter: 1})
 	if err != nil {
+		if isNotFound(err) {
+			removeGone(ctx, response, fmt.Sprintf("router %d", routerID))
+			return
+		}
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list routes: %s", err))
 		return
 	}
@@ -139,7 +150,7 @@ func (c computeRouterRouteResource) Read(ctx context.Context, request tfsdk.Read
 		}
 	}
 
-	response.Diagnostics.AddError("Not Found", fmt.Sprintf("route with id %d not found", state.ID.Value))
+	removeGone(ctx, response, fmt.Sprintf("route %d", state.ID.Value))
 }
 
 func (c computeRouterRouteResource) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
@@ -155,9 +166,15 @@ func (c computeRouterRouteResource) Delete(ctx context.Context, request tfsdk.De
 	}
 
 	routerID := int(state.RouterID.Value)
-	err := compute.NewRouteService(c.client, routerID).Delete(ctx, int(state.ID.Value))
+	err := retryDelete(ctx, "delete route", func() error {
+		return compute.NewRouteService(c.client, routerID).Delete(ctx, int(state.ID.Value))
+	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete route: %s", err))
 		return
 	}
+}
+
+func (c computeRouterRouteResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
+	importStateCompositeInt64IDs(ctx, request, response, path.Root("router_id"), path.Root("id"))
 }
