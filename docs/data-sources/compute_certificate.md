@@ -17,10 +17,8 @@ description: |-
 
 ### Required
 
-- `certificate` (String) certificate in base64 encoded PEM format
 - `location_id` (Number) unique identifier of the location
 - `name` (String) name of the certificate
-- `private_key` (String, Sensitive) private key in base64 encoded PEM format
 
 ### Read-Only
 

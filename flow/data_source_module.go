@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/common"
+	"github.com/flowswiss/goclient/v2/common"
+	"github.com/flowswiss/goclient/v2/core"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
-var _ tfsdk.DataSourceType = (*moduleDataSourceType)(nil)
-var _ tfsdk.DataSource = (*moduleDataSource)(nil)
+var _ datasource.DataSource = (*moduleDataSource)(nil)
+var _ datasource.DataSourceWithConfigure = (*moduleDataSource)(nil)
 
 type moduleDataSourceData struct {
 	ID     types.Int64  `tfsdk:"id"`
@@ -24,91 +24,89 @@ type moduleDataSourceData struct {
 }
 
 func (m *moduleDataSourceData) FromEntity(module common.Module) {
-	m.ID = types.Int64{Value: int64(module.ID)}
-	m.Name = types.String{Value: module.Name}
+	m.ID = types.Int64Value(int64(module.ID))
+	m.Name = types.StringValue(module.Name)
 
-	m.Parent = types.Object{
-		AttrTypes: map[string]attr.Type{
-			"id":   types.Int64Type,
-			"name": types.StringType,
-		},
+	parentTypes := map[string]attr.Type{
+		"id":   types.Int64Type,
+		"name": types.StringType,
 	}
 
 	if module.Parent == nil {
-		m.Parent.Null = true
+		m.Parent = types.ObjectNull(parentTypes)
 	} else {
-		m.Parent.Attrs = map[string]attr.Value{
-			"id":   types.Int64{Value: int64(module.Parent.ID)},
-			"name": types.String{Value: module.Parent.Name},
-		}
+		m.Parent = types.ObjectValueMust(parentTypes, map[string]attr.Value{
+			"id":   types.Int64Value(int64(module.Parent.ID)),
+			"name": types.StringValue(module.Parent.Name),
+		})
 	}
 }
 
 func (m moduleDataSourceData) AppliesTo(module common.Module) bool {
-	if !m.ID.Null && m.ID.Value != int64(module.ID) {
+	if !m.ID.IsNull() && m.ID.ValueInt64() != int64(module.ID) {
 		return false
 	}
 
-	if !m.Name.Null && m.Name.Value != module.Name {
+	if !m.Name.IsNull() && m.Name.ValueString() != module.Name {
 		return false
 	}
 
 	return true
 }
 
-type moduleDataSourceType struct{}
-
-func (l moduleDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (l moduleDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the module",
 				Optional:            true,
 				Computed:            true,
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the module",
 				Optional:            true,
 				Computed:            true,
 			},
-			"parent": {
-				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-					"id": {
-						Type:                types.Int64Type,
+			"parent": schema.SingleNestedAttribute{
+				Attributes: map[string]schema.Attribute{
+					"id": schema.Int64Attribute{
 						MarkdownDescription: "unique identifier of the parent module",
 						Computed:            true,
 					},
-					"name": {
-						Type:                types.StringType,
+					"name": schema.StringAttribute{
 						MarkdownDescription: "name of the parent module",
 						Computed:            true,
 					},
-				}),
+				},
 				MarkdownDescription: "parent module",
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (l moduleDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newModuleDataSource() datasource.DataSource {
+	return &moduleDataSource{}
+}
+
+func (l *moduleDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_module"
+}
+
+func (l *moduleDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return moduleDataSource{
-		client: prov.client,
-	}, diagnostics
+	l.client = client
 }
 
 type moduleDataSource struct {
-	client goclient.Client
+	client flowClient
 }
 
-func (l moduleDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (l moduleDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config moduleDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -116,7 +114,7 @@ func (l moduleDataSource) Read(ctx context.Context, request tfsdk.ReadDataSource
 		return
 	}
 
-	list, err := common.NewModuleService(l.client).List(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := l.client.Common.Module.List(ctx, core.CursorAll)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get modules: %s", err))
 		return

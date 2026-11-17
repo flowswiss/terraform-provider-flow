@@ -17,10 +17,12 @@ description: |-
 
 ### Required
 
-- `certificate` (String) certificate in base64 encoded PEM format
+> **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
+
+- `certificate` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) certificate in base64 encoded PEM format; editing it produces no plan, rotate with `terraform apply -replace=`
 - `location_id` (Number) unique identifier of the location
 - `name` (String) name of the certificate
-- `private_key` (String, Sensitive) private key in base64 encoded PEM format
+- `private_key` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) private key in base64 encoded PEM format; editing it produces no plan, rotate with `terraform apply -replace=`
 
 ### Read-Only
 

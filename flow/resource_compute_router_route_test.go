@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
 func TestAccComputeRouterRoute_Basic(t *testing.T) {
@@ -19,7 +19,7 @@ func TestAccComputeRouterRoute_Basic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resource.ParallelTest(t, resource.TestCase{
+	testAccSequential(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
@@ -29,6 +29,22 @@ func TestAccComputeRouterRoute_Basic(t *testing.T) {
 					resource.TestCheckResourceAttrSet("flow_compute_router_route.foobar", "router_id"),
 					resource.TestCheckResourceAttr("flow_compute_router_route.foobar", "destination", destination),
 					resource.TestCheckResourceAttr("flow_compute_router_route.foobar", "next_hop", nextHop),
+				),
+			},
+			{
+				ResourceName:      "flow_compute_router_route.foobar",
+				ImportState:       true,
+				ImportStateIdFunc: testAccCompositeImportID("flow_compute_router_route.foobar", "router_id", "id"),
+				ImportStateVerify: true,
+			},
+			{
+				Config: fmt.Sprintf(testAccComputeRouterRouteConfigBasic, networkName, networkCIDR, routerName, destination, nextHop) + testAccComputeRouterRouteConfigDataSource,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrPair("data.flow_compute_router_route.by_id", "id", "flow_compute_router_route.foobar", "id"),
+					resource.TestCheckResourceAttrPair("data.flow_compute_router_route.by_id", "router_id", "flow_compute_router_route.foobar", "router_id"),
+					resource.TestCheckResourceAttrPair("data.flow_compute_router_route.by_id", "destination", "flow_compute_router_route.foobar", "destination"),
+					resource.TestCheckResourceAttrPair("data.flow_compute_router_route.by_id", "next_hop", "flow_compute_router_route.foobar", "next_hop"),
+					resource.TestCheckResourceAttrPair("data.flow_compute_router_route.by_destination", "id", "flow_compute_router_route.foobar", "id"),
 				),
 			},
 		},
@@ -65,5 +81,17 @@ resource "flow_compute_router_route" "foobar" {
 	next_hop = "%s"
 
 	depends_on = [flow_compute_router_interface.foobar]
+}
+`
+
+const testAccComputeRouterRouteConfigDataSource = `
+data "flow_compute_router_route" "by_id" {
+	router_id = flow_compute_router_route.foobar.router_id
+	id        = flow_compute_router_route.foobar.id
+}
+
+data "flow_compute_router_route" "by_destination" {
+	router_id   = flow_compute_router_route.foobar.router_id
+	destination = flow_compute_router_route.foobar.destination
 }
 `

@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
-	_ tfsdk.DataSourceType = (*computeSecurityGroupDataSourceType)(nil)
-	_ tfsdk.DataSource     = (*computeSecurityGroupDataSource)(nil)
+	_ datasource.DataSource              = (*computeSecurityGroupDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*computeSecurityGroupDataSource)(nil)
 )
 
 type computeSecurityGroupDataSourceData struct {
@@ -25,70 +25,71 @@ type computeSecurityGroupDataSourceData struct {
 }
 
 func (c *computeSecurityGroupDataSourceData) FromEntity(securityGroup compute.SecurityGroup) {
-	c.ID = types.Int64{Value: int64(securityGroup.ID)}
-	c.Name = types.String{Value: securityGroup.Name}
-	c.LocationID = types.Int64{Value: int64(securityGroup.Location.ID)}
+	c.ID = types.Int64Value(int64(securityGroup.ID))
+	c.Name = types.StringValue(securityGroup.Name)
+	c.LocationID = types.Int64Value(int64(securityGroup.Location.ID))
 }
 
 func (c computeSecurityGroupDataSourceData) AppliesTo(securityGroup compute.SecurityGroup) bool {
-	if !c.ID.Null && securityGroup.ID != int(c.ID.Value) {
+	if !c.ID.IsNull() && securityGroup.ID != int(c.ID.ValueInt64()) {
 		return false
 	}
 
-	if !c.Name.Null && securityGroup.Name != c.Name.Value {
+	if !c.Name.IsNull() && securityGroup.Name != c.Name.ValueString() {
 		return false
 	}
 
-	if !c.LocationID.Null && securityGroup.Location.ID != int(c.LocationID.Value) {
+	if !c.LocationID.IsNull() && securityGroup.Location.ID != int(c.LocationID.ValueInt64()) {
 		return false
 	}
 
 	return true
 }
 
-type computeSecurityGroupDataSourceType struct{}
-
-func (c computeSecurityGroupDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (c computeSecurityGroupDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the security group",
 				Optional:            true,
 				Computed:            true,
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the security group",
 				Optional:            true,
 				Computed:            true,
 			},
-			"location_id": {
-				Type:                types.Int64Type,
+			"location_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the location",
 				Optional:            true,
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeSecurityGroupDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeSecurityGroupDataSource() datasource.DataSource {
+	return &computeSecurityGroupDataSource{}
+}
+
+func (c *computeSecurityGroupDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_security_group"
+}
+
+func (c *computeSecurityGroupDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeSecurityGroupDataSource{
-		securityGroupService: compute.NewSecurityGroupService(prov.client),
-	}, diagnostics
+	c.client = client
 }
 
 type computeSecurityGroupDataSource struct {
-	securityGroupService compute.SecurityGroupService
+	client flowClient
 }
 
-func (c computeSecurityGroupDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (c computeSecurityGroupDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config computeSecurityGroupDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -96,7 +97,7 @@ func (c computeSecurityGroupDataSource) Read(ctx context.Context, request tfsdk.
 		return
 	}
 
-	list, err := c.securityGroupService.List(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := c.client.Compute.SecurityGroup.List(ctx, core.CursorAll)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list security groups: %s", err))
 		return

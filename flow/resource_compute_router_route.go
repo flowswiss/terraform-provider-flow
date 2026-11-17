@@ -4,18 +4,21 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
 	"github.com/hashicorp/terraform-plugin-framework/path"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
-	_ tfsdk.ResourceType            = (*computeRouterRouteResourceType)(nil)
-	_ tfsdk.Resource                = (*computeRouterRouteResource)(nil)
-	_ tfsdk.ResourceWithImportState = (*computeRouterRouteResource)(nil)
+	_ resource.Resource                = (*computeRouterRouteResource)(nil)
+	_ resource.ResourceWithConfigure   = (*computeRouterRouteResource)(nil)
+	_ resource.ResourceWithImportState = (*computeRouterRouteResource)(nil)
 )
 
 type computeRouterRouteResourceData struct {
@@ -26,70 +29,70 @@ type computeRouterRouteResourceData struct {
 }
 
 func (c *computeRouterRouteResourceData) FromEntity(routerID int, route compute.Route) {
-	c.ID = types.Int64{Value: int64(route.ID)}
-	c.RouterID = types.Int64{Value: int64(routerID)}
-	c.Destination = types.String{Value: route.Destination}
-	c.NextHop = types.String{Value: route.NextHop}
+	c.ID = types.Int64Value(int64(route.ID))
+	c.RouterID = types.Int64Value(int64(routerID))
+	c.Destination = types.StringValue(route.Destination)
+	c.NextHop = types.StringValue(route.NextHop)
 }
 
-type computeRouterRouteResourceType struct{}
-
-func (c computeRouterRouteResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
+func (c computeRouterRouteResource) Schema(ctx context.Context, request resource.SchemaRequest, response *resource.SchemaResponse) {
+	response.Schema = schema.Schema{
 		MarkdownDescription: "Import: `terraform import flow_compute_router_route.<name> <router_id>:<id>`",
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the route",
 				Computed:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.UseStateForUnknown(),
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
 				},
 			},
-			"router_id": {
-				Type:                types.Int64Type,
+			"router_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the router",
 				Required:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.RequiresReplace(),
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.RequiresReplace(),
 				},
 			},
-			"destination": {
-				Type:                types.StringType,
+			"destination": schema.StringAttribute{
 				MarkdownDescription: "IP destination range of the route",
 				Required:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.RequiresReplace(),
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
 				},
 			},
-			"next_hop": {
-				Type:                types.StringType,
+			"next_hop": schema.StringAttribute{
 				MarkdownDescription: "IP address of the next hop",
 				Required:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.RequiresReplace(),
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
 				},
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeRouterRouteResourceType) NewResource(ctx context.Context, p tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeRouterRouteResource() resource.Resource {
+	return &computeRouterRouteResource{}
+}
+
+func (c *computeRouterRouteResource) Metadata(ctx context.Context, request resource.MetadataRequest, response *resource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_router_route"
+}
+
+func (c *computeRouterRouteResource) Configure(ctx context.Context, request resource.ConfigureRequest, response *resource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeRouterRouteResource{
-		client: prov.client,
-	}, diagnostics
+	c.client = client
 }
 
 type computeRouterRouteResource struct {
-	client goclient.Client
+	client flowClient
 }
 
-func (c computeRouterRouteResource) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
+func (c computeRouterRouteResource) Create(ctx context.Context, request resource.CreateRequest, response *resource.CreateResponse) {
 	var config computeRouterRouteResourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -97,15 +100,16 @@ func (c computeRouterRouteResource) Create(ctx context.Context, request tfsdk.Cr
 		return
 	}
 
-	routerID := int(config.RouterID.Value)
-	create := compute.RouteCreate{
-		Destination: config.Destination.Value,
-		NextHop:     config.NextHop.Value,
+	routerID := int(config.RouterID.ValueInt64())
+	create := compute.RouteCreateReq{
+		RouterID:    uint(routerID),
+		Destination: config.Destination.ValueString(),
+		NextHop:     config.NextHop.ValueString(),
 	}
 
 	var route compute.Route
 	err := retryCreate(ctx, "create route", func() (err error) {
-		route, err = compute.NewRouteService(c.client, routerID).Create(ctx, create)
+		route, err = c.client.Compute.Route.Create(ctx, create)
 		return err
 	})
 	if err != nil {
@@ -120,7 +124,7 @@ func (c computeRouterRouteResource) Create(ctx context.Context, request tfsdk.Cr
 	response.Diagnostics.Append(diagnostics...)
 }
 
-func (c computeRouterRouteResource) Read(ctx context.Context, request tfsdk.ReadResourceRequest, response *tfsdk.ReadResourceResponse) {
+func (c computeRouterRouteResource) Read(ctx context.Context, request resource.ReadRequest, response *resource.ReadResponse) {
 	var state computeRouterRouteResourceData
 	diagnostics := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diagnostics...)
@@ -128,9 +132,12 @@ func (c computeRouterRouteResource) Read(ctx context.Context, request tfsdk.Read
 		return
 	}
 
-	routerID := int(state.RouterID.Value)
+	routerID := int(state.RouterID.ValueInt64())
 
-	list, err := compute.NewRouteService(c.client, routerID).List(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := c.client.Compute.Route.List(ctx, compute.RouteListReq{
+		RouterID: uint(routerID),
+		Cursor:   core.CursorAll,
+	})
 	if err != nil {
 		if isNotFound(err) {
 			removeGone(ctx, response, fmt.Sprintf("router %d", routerID))
@@ -141,7 +148,7 @@ func (c computeRouterRouteResource) Read(ctx context.Context, request tfsdk.Read
 	}
 
 	for _, route := range list.Items {
-		if route.ID == int(state.ID.Value) {
+		if route.ID == int(state.ID.ValueInt64()) {
 			state.FromEntity(routerID, route)
 
 			diagnostics = response.State.Set(ctx, state)
@@ -150,14 +157,14 @@ func (c computeRouterRouteResource) Read(ctx context.Context, request tfsdk.Read
 		}
 	}
 
-	removeGone(ctx, response, fmt.Sprintf("route %d", state.ID.Value))
+	removeGone(ctx, response, fmt.Sprintf("route %d", state.ID.ValueInt64()))
 }
 
-func (c computeRouterRouteResource) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
+func (c computeRouterRouteResource) Update(ctx context.Context, request resource.UpdateRequest, response *resource.UpdateResponse) {
 	response.Diagnostics.AddError("Not Supported", "updating a route is not supported")
 }
 
-func (c computeRouterRouteResource) Delete(ctx context.Context, request tfsdk.DeleteResourceRequest, response *tfsdk.DeleteResourceResponse) {
+func (c computeRouterRouteResource) Delete(ctx context.Context, request resource.DeleteRequest, response *resource.DeleteResponse) {
 	var state computeRouterRouteResourceData
 	diagnostics := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diagnostics...)
@@ -165,9 +172,11 @@ func (c computeRouterRouteResource) Delete(ctx context.Context, request tfsdk.De
 		return
 	}
 
-	routerID := int(state.RouterID.Value)
 	err := retryDelete(ctx, "delete route", func() error {
-		return compute.NewRouteService(c.client, routerID).Delete(ctx, int(state.ID.Value))
+		return c.client.Compute.Route.Delete(ctx, compute.RouteDeleteReq{
+			RouterID: uint(state.RouterID.ValueInt64()),
+			RouteID:  uint(state.ID.ValueInt64()),
+		})
 	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete route: %s", err))
@@ -175,6 +184,6 @@ func (c computeRouterRouteResource) Delete(ctx context.Context, request tfsdk.De
 	}
 }
 
-func (c computeRouterRouteResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
+func (c computeRouterRouteResource) ImportState(ctx context.Context, request resource.ImportStateRequest, response *resource.ImportStateResponse) {
 	importStateCompositeInt64IDs(ctx, request, response, path.Root("router_id"), path.Root("id"))
 }

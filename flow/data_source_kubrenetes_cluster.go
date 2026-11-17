@@ -3,17 +3,18 @@ package flow
 import (
 	"context"
 	"fmt"
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/kubernetes"
+
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/flowswiss/goclient/v2/kubernetes"
 	"github.com/flowswiss/terraform-provider-flow/filter"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
-	_ tfsdk.DataSourceType = (*kubernetesClusterDataSourceType)(nil)
-	_ tfsdk.DataSource     = (*kubernetesClusterDataSource)(nil)
+	_ datasource.DataSource              = (*kubernetesClusterDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*kubernetesClusterDataSource)(nil)
 )
 
 type kubernetesClusterDataSourceData struct {
@@ -34,141 +35,135 @@ type kubernetesClusterDataSourceData struct {
 }
 
 func (k *kubernetesClusterDataSourceData) FromEntity(cluster kubernetes.Cluster) {
-	k.ID = types.Int64{Value: int64(cluster.ID)}
-	k.Name = types.String{Value: cluster.Name}
+	k.ID = types.Int64Value(int64(cluster.ID))
+	k.Name = types.StringValue(cluster.Name)
 
-	k.LocationID = types.Int64{Value: int64(cluster.Location.ID)}
-	k.NetworkID = types.Int64{Value: int64(cluster.Network.ID)}
-	k.SecurityGroupID = types.Int64{Value: int64(cluster.SecurityGroup.ID)}
+	k.LocationID = types.Int64Value(int64(cluster.Location.ID))
+	k.NetworkID = types.Int64Value(int64(cluster.Network.ID))
+	k.SecurityGroupID = types.Int64Value(int64(cluster.SecurityGroup.ID))
 
 	if cluster.PublicAddress == "" {
-		k.PublicAddress = types.String{Null: true}
+		k.PublicAddress = types.StringNull()
 	} else {
-		k.PublicAddress = types.String{Value: cluster.PublicAddress}
+		k.PublicAddress = types.StringValue(cluster.PublicAddress)
 	}
 
-	k.DNSName = types.String{Value: cluster.DNSName}
+	k.DNSName = types.StringValue(cluster.DNSName)
 
-	k.VersionID = types.Int64{Value: int64(cluster.Version.ID)}
+	k.VersionID = types.Int64Value(int64(cluster.Version.ID))
 
-	k.NodeCount = types.Int64{Value: int64(cluster.NodeCount.Expected.Worker)}
-	k.NodeProductID = types.Int64{Value: int64(cluster.ExpectedPreset.Worker.ID)}
+	k.NodeCount = types.Int64Value(int64(cluster.NodeCount.Expected.Worker))
+	k.NodeProductID = types.Int64Value(int64(cluster.ExpectedPreset.Worker.ID))
 }
 
 func (k kubernetesClusterDataSourceData) AppliesTo(cluster kubernetes.Cluster) bool {
-	if !k.ID.Null && k.ID.Value != int64(cluster.ID) {
+	if !k.ID.IsNull() && k.ID.ValueInt64() != int64(cluster.ID) {
 		return false
 	}
 
-	if !k.Name.Null && k.Name.Value != cluster.Name {
+	if !k.Name.IsNull() && k.Name.ValueString() != cluster.Name {
 		return false
 	}
 
-	if !k.LocationID.Null && k.LocationID.Value != int64(cluster.Location.ID) {
+	if !k.LocationID.IsNull() && k.LocationID.ValueInt64() != int64(cluster.Location.ID) {
 		return false
 	}
 
-	if !k.NetworkID.Null && k.NetworkID.Value != int64(cluster.Network.ID) {
+	if !k.NetworkID.IsNull() && k.NetworkID.ValueInt64() != int64(cluster.Network.ID) {
 		return false
 	}
 
-	if !k.SecurityGroupID.Null && k.SecurityGroupID.Value != int64(cluster.SecurityGroup.ID) {
+	if !k.SecurityGroupID.IsNull() && k.SecurityGroupID.ValueInt64() != int64(cluster.SecurityGroup.ID) {
 		return false
 	}
 
-	if !k.PublicAddress.Null && k.PublicAddress.Value != cluster.PublicAddress {
+	if !k.PublicAddress.IsNull() && k.PublicAddress.ValueString() != cluster.PublicAddress {
 		return false
 	}
 
-	if !k.DNSName.Null && k.DNSName.Value != cluster.DNSName {
+	if !k.DNSName.IsNull() && k.DNSName.ValueString() != cluster.DNSName {
 		return false
 	}
 
 	return true
 }
 
-type kubernetesClusterDataSourceType struct{}
-
-func (k kubernetesClusterDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (k kubernetesClusterDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the cluster",
 				Optional:            true,
 				Computed:            true,
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the cluster",
 				Optional:            true,
 				Computed:            true,
 			},
-			"location_id": {
-				Type:                types.Int64Type,
+			"location_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the location",
 				Optional:            true,
 				Computed:            true,
 			},
-			"network_id": {
-				Type:                types.Int64Type,
+			"network_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the network",
 				Optional:            true,
 				Computed:            true,
 			},
-			"security_group_id": {
-				Type:                types.Int64Type,
+			"security_group_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the security group",
 				Optional:            true,
 				Computed:            true,
 			},
-			"public_address": {
-				Type:                types.StringType,
+			"public_address": schema.StringAttribute{
 				MarkdownDescription: "public address of the cluster",
 				Optional:            true,
 				Computed:            true,
 			},
-			"dns_name": {
-				Type:                types.StringType,
+			"dns_name": schema.StringAttribute{
 				MarkdownDescription: "DNS name of the cluster",
 				Optional:            true,
 				Computed:            true,
 			},
-			"version_id": {
-				Type:                types.Int64Type,
+			"version_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the kubernetes version",
 				Computed:            true,
 			},
-			"node_count": {
-				Type:                types.Int64Type,
+			"node_count": schema.Int64Attribute{
 				MarkdownDescription: "number of nodes in the cluster",
 				Computed:            true,
 			},
-			"node_product_id": {
-				Type:                types.Int64Type,
+			"node_product_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the node product",
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (k kubernetesClusterDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newKubernetesClusterDataSource() datasource.DataSource {
+	return &kubernetesClusterDataSource{}
+}
+
+func (k *kubernetesClusterDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_kubernetes_cluster"
+}
+
+func (k *kubernetesClusterDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return kubernetesClusterDataSource{
-		clusterService: kubernetes.NewClusterService(prov.client),
-	}, diagnostics
+	k.client = client
 }
 
 type kubernetesClusterDataSource struct {
-	clusterService kubernetes.ClusterService
+	client flowClient
 }
 
-func (k kubernetesClusterDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (k kubernetesClusterDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config kubernetesClusterDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -176,7 +171,7 @@ func (k kubernetesClusterDataSource) Read(ctx context.Context, request tfsdk.Rea
 		return
 	}
 
-	clusters, err := k.clusterService.List(ctx, goclient.Cursor{NoFilter: 1})
+	clusters, err := k.client.Kubernetes.Cluster.List(ctx, core.CursorAll)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list clusters: %s", err))
 		return

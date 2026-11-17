@@ -4,17 +4,22 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/flowswiss/goclient/v2/compute"
 	"github.com/hashicorp/terraform-plugin-framework/path"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
-	_ tfsdk.ResourceType            = (*computeNetworkResourceType)(nil)
-	_ tfsdk.Resource                = (*computeNetworkResource)(nil)
-	_ tfsdk.ResourceWithImportState = (*computeNetworkResource)(nil)
+	_ resource.Resource                = (*computeNetworkResource)(nil)
+	_ resource.ResourceWithConfigure   = (*computeNetworkResource)(nil)
+	_ resource.ResourceWithImportState = (*computeNetworkResource)(nil)
 )
 
 type computeNetworkResourceAllocationPool struct {
@@ -33,117 +38,112 @@ type computeNetworkResourceData struct {
 }
 
 func (c *computeNetworkResourceData) FromEntity(network compute.Network) {
-	c.ID = types.Int64{Value: int64(network.ID)}
-	c.Name = types.String{Value: network.Name}
-	c.CIDR = types.String{Value: network.CIDR}
-	c.LocationID = types.Int64{Value: int64(network.Location.ID)}
-	c.GatewayIP = types.String{Value: network.GatewayIP}
+	c.ID = types.Int64Value(int64(network.ID))
+	c.Name = types.StringValue(network.Name)
+	c.CIDR = types.StringValue(network.CIDR)
+	c.LocationID = types.Int64Value(int64(network.Location.ID))
+	c.GatewayIP = types.StringValue(network.GatewayIP)
 
 	c.AllocationPool = &computeNetworkResourceAllocationPool{
-		Start: types.String{Value: network.AllocationPoolStart},
-		End:   types.String{Value: network.AllocationPoolEnd},
+		Start: types.StringValue(network.AllocationPoolStart),
+		End:   types.StringValue(network.AllocationPoolEnd),
 	}
 
 	c.DomainNameServers = make([]types.String, len(network.DomainNameServers))
 	for idx, domainNameServer := range network.DomainNameServers {
-		c.DomainNameServers[idx] = types.String{Value: domainNameServer}
+		c.DomainNameServers[idx] = types.StringValue(domainNameServer)
 	}
 }
 
-type computeNetworkResourceType struct{}
-
-func (c computeNetworkResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (c computeNetworkResource) Schema(ctx context.Context, request resource.SchemaRequest, response *resource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the network",
 				Computed:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.UseStateForUnknown(),
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
 				},
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the network",
 				Required:            true,
 			},
-			"cidr": {
-				Type:                types.StringType,
+			"cidr": schema.StringAttribute{
 				MarkdownDescription: "CIDR of the network",
 				Required:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.RequiresReplace(),
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
 				},
 			},
-			"location_id": {
-				Type:                types.Int64Type,
+			"location_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the location",
 				Required:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.RequiresReplace(),
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.RequiresReplace(),
 				},
 			},
-			"domain_name_servers": {
-				Type: types.ListType{
-					ElemType: types.StringType,
-				},
+			"domain_name_servers": schema.ListAttribute{
+				ElementType:         types.StringType,
 				MarkdownDescription: "list of domain name servers",
 				Optional:            true,
 				Computed:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.UseStateForUnknown(),
+				PlanModifiers: []planmodifier.List{
+					listplanmodifier.UseStateForUnknown(),
 				},
 			},
-			"allocation_pool": {
-				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-					"start": {
-						Type:                types.StringType,
+			"allocation_pool": schema.SingleNestedAttribute{
+				Attributes: map[string]schema.Attribute{
+					"start": schema.StringAttribute{
 						MarkdownDescription: "start of the allocation pool",
 						Required:            true,
 					},
-					"end": {
-						Type:                types.StringType,
+					"end": schema.StringAttribute{
 						MarkdownDescription: "end of the allocation pool",
 						Required:            true,
 					},
-				}),
+				},
 				MarkdownDescription: "allocation pool",
 				Optional:            true,
 				Computed:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.UseStateForUnknown(),
+				PlanModifiers: []planmodifier.Object{
+					objectplanmodifier.UseStateForUnknown(),
 				},
 			},
-			"gateway_ip": {
-				Type:                types.StringType,
+			"gateway_ip": schema.StringAttribute{
 				MarkdownDescription: "gateway IP of the network",
 				Optional:            true,
 				Computed:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.UseStateForUnknown(),
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeNetworkResourceType) NewResource(ctx context.Context, p tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeNetworkResource() resource.Resource {
+	return &computeNetworkResource{}
+}
+
+func (c *computeNetworkResource) Metadata(ctx context.Context, request resource.MetadataRequest, response *resource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_network"
+}
+
+func (c *computeNetworkResource) Configure(ctx context.Context, request resource.ConfigureRequest, response *resource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeNetworkResource{
-		networkService: compute.NewNetworkService(prov.client),
-	}, diagnostics
+	c.client = client
 }
 
 type computeNetworkResource struct {
-	networkService compute.NetworkService
+	client flowClient
 }
 
-func (c computeNetworkResource) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
+func (c computeNetworkResource) Create(ctx context.Context, request resource.CreateRequest, response *resource.CreateResponse) {
 	var config computeNetworkResourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -151,31 +151,31 @@ func (c computeNetworkResource) Create(ctx context.Context, request tfsdk.Create
 		return
 	}
 
-	create := compute.NetworkCreate{
-		Name:       config.Name.Value,
-		LocationID: int(config.LocationID.Value),
-		CIDR:       config.CIDR.Value,
+	create := compute.NetworkCreateReq{
+		Name:       nonZero(config.Name.ValueString()),
+		LocationID: nonZero(int(config.LocationID.ValueInt64())),
+		CIDR:       nonZero(config.CIDR.ValueString()),
 		DomainNameServers: []string{
 			"1.1.1.1", "8.8.8.8",
 		},
-		GatewayIP: config.GatewayIP.Value,
+		GatewayIP: nonZero(config.GatewayIP.ValueString()),
 	}
 
 	if len(config.DomainNameServers) != 0 {
 		create.DomainNameServers = make([]string, len(config.DomainNameServers))
 		for idx, domainNameServer := range config.DomainNameServers {
-			create.DomainNameServers[idx] = domainNameServer.Value
+			create.DomainNameServers[idx] = domainNameServer.ValueString()
 		}
 	}
 
 	if config.AllocationPool != nil {
-		create.AllocationPoolStart = config.AllocationPool.Start.Value
-		create.AllocationPoolEnd = config.AllocationPool.End.Value
+		create.AllocationPoolStart = nonZero(config.AllocationPool.Start.ValueString())
+		create.AllocationPoolEnd = nonZero(config.AllocationPool.End.ValueString())
 	}
 
 	var network compute.Network
 	err := retryCreate(ctx, "create network", func() (err error) {
-		network, err = c.networkService.Create(ctx, create)
+		network, err = c.client.Compute.Network.Create(ctx, create)
 		return err
 	})
 	if err != nil {
@@ -190,7 +190,7 @@ func (c computeNetworkResource) Create(ctx context.Context, request tfsdk.Create
 	response.Diagnostics.Append(diagnostics...)
 }
 
-func (c computeNetworkResource) Read(ctx context.Context, request tfsdk.ReadResourceRequest, response *tfsdk.ReadResourceResponse) {
+func (c computeNetworkResource) Read(ctx context.Context, request resource.ReadRequest, response *resource.ReadResponse) {
 	var state computeNetworkResourceData
 	diagnostics := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diagnostics...)
@@ -198,10 +198,10 @@ func (c computeNetworkResource) Read(ctx context.Context, request tfsdk.ReadReso
 		return
 	}
 
-	network, err := c.networkService.Get(ctx, int(state.ID.Value))
+	network, err := c.client.Compute.Network.Get(ctx, compute.NetworkGetReq{ID: uint(state.ID.ValueInt64())})
 	if err != nil {
 		if isNotFound(err) {
-			removeGone(ctx, response, fmt.Sprintf("network %d", state.ID.Value))
+			removeGone(ctx, response, fmt.Sprintf("network %d", state.ID.ValueInt64()))
 			return
 		}
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get network: %s", err))
@@ -214,7 +214,7 @@ func (c computeNetworkResource) Read(ctx context.Context, request tfsdk.ReadReso
 	response.Diagnostics.Append(diagnostics...)
 }
 
-func (c computeNetworkResource) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
+func (c computeNetworkResource) Update(ctx context.Context, request resource.UpdateRequest, response *resource.UpdateResponse) {
 	var state computeNetworkResourceData
 	diagnostics := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diagnostics...)
@@ -229,26 +229,27 @@ func (c computeNetworkResource) Update(ctx context.Context, request tfsdk.Update
 		return
 	}
 
-	update := compute.NetworkUpdate{
-		Name:      config.Name.Value,
-		GatewayIP: config.GatewayIP.Value,
+	update := compute.NetworkUpdateReq{
+		ID:        uint(state.ID.ValueInt64()),
+		Name:      nonZero(config.Name.ValueString()),
+		GatewayIP: nonZero(config.GatewayIP.ValueString()),
 	}
 
 	if len(config.DomainNameServers) != 0 {
 		update.DomainNameServers = make([]string, len(config.DomainNameServers))
 		for idx, domainNameServer := range config.DomainNameServers {
-			update.DomainNameServers[idx] = domainNameServer.Value
+			update.DomainNameServers[idx] = domainNameServer.ValueString()
 		}
 	}
 
 	if config.AllocationPool != nil {
-		update.AllocationPoolStart = config.AllocationPool.Start.Value
-		update.AllocationPoolEnd = config.AllocationPool.End.Value
+		update.AllocationPoolStart = nonZero(config.AllocationPool.Start.ValueString())
+		update.AllocationPoolEnd = nonZero(config.AllocationPool.End.ValueString())
 	}
 
 	var network compute.Network
 	err := retry(ctx, "update network", func() (err error) {
-		network, err = c.networkService.Update(ctx, int(state.ID.Value), update)
+		network, err = c.client.Compute.Network.Update(ctx, update)
 		return err
 	})
 	if err != nil {
@@ -262,7 +263,7 @@ func (c computeNetworkResource) Update(ctx context.Context, request tfsdk.Update
 	response.Diagnostics.Append(diagnostics...)
 }
 
-func (c computeNetworkResource) Delete(ctx context.Context, request tfsdk.DeleteResourceRequest, response *tfsdk.DeleteResourceResponse) {
+func (c computeNetworkResource) Delete(ctx context.Context, request resource.DeleteRequest, response *resource.DeleteResponse) {
 	var state computeNetworkResourceData
 	diagnostics := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diagnostics...)
@@ -271,7 +272,7 @@ func (c computeNetworkResource) Delete(ctx context.Context, request tfsdk.Delete
 	}
 
 	err := retryDelete(ctx, "delete network", func() error {
-		return c.networkService.Delete(ctx, int(state.ID.Value))
+		return c.client.Compute.Network.Delete(ctx, compute.NetworkDeleteReq{ID: uint(state.ID.ValueInt64())})
 	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete network: %s", err))
@@ -279,6 +280,6 @@ func (c computeNetworkResource) Delete(ctx context.Context, request tfsdk.Delete
 	}
 }
 
-func (c computeNetworkResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
+func (c computeNetworkResource) ImportState(ctx context.Context, request resource.ImportStateRequest, response *resource.ImportStateResponse) {
 	importStatePassthroughInt64ID(ctx, path.Root("id"), request, response)
 }

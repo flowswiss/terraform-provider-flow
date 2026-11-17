@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
-	_ tfsdk.DataSourceType = (*computeNetworkInterfaceDataSourceType)(nil)
-	_ tfsdk.DataSource     = (*computeNetworkInterfaceDataSource)(nil)
+	_ datasource.DataSource              = (*computeNetworkInterfaceDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*computeNetworkInterfaceDataSource)(nil)
 )
 
 type computeNetworkInterfaceDataSourceData struct {
@@ -31,107 +31,105 @@ type computeNetworkInterfaceDataSourceData struct {
 }
 
 func (c *computeNetworkInterfaceDataSourceData) FromEntity(serverID int, iface compute.NetworkInterface) {
-	c.ID = types.Int64{Value: int64(iface.ID)}
-	c.ServerID = types.Int64{Value: int64(serverID)}
-	c.NetworkID = types.Int64{Value: int64(iface.Network.ID)}
+	c.ID = types.Int64Value(int64(iface.ID))
+	c.ServerID = types.Int64Value(int64(serverID))
+	c.NetworkID = types.Int64Value(int64(iface.Network.ID))
 
-	c.PrivateIP = types.String{Value: iface.PrivateIP}
-	c.MacAddress = types.String{Value: iface.MacAddress}
+	c.PrivateIP = types.StringValue(iface.PrivateIP)
+	c.MacAddress = types.StringValue(iface.MacAddress)
 
 	c.SecurityGroupIDs = make([]types.Int64, len(iface.SecurityGroups))
 	for idx, securityGroup := range iface.SecurityGroups {
-		c.SecurityGroupIDs[idx] = types.Int64{Value: int64(securityGroup.ID)}
+		c.SecurityGroupIDs[idx] = types.Int64Value(int64(securityGroup.ID))
 	}
 
-	c.Security = types.Bool{Value: iface.Security}
+	c.Security = types.BoolValue(iface.Security)
 }
 
 func (c computeNetworkInterfaceDataSourceData) AppliesTo(iface compute.NetworkInterface) bool {
-	if !c.ID.Null && c.ID.Value != int64(iface.ID) {
+	if !c.ID.IsNull() && c.ID.ValueInt64() != int64(iface.ID) {
 		return false
 	}
 
-	if !c.NetworkID.Null && c.NetworkID.Value != int64(iface.Network.ID) {
+	if !c.NetworkID.IsNull() && c.NetworkID.ValueInt64() != int64(iface.Network.ID) {
 		return false
 	}
 
-	if !c.PrivateIP.Null && c.PrivateIP.Value != iface.PrivateIP {
+	if !c.PrivateIP.IsNull() && c.PrivateIP.ValueString() != iface.PrivateIP {
 		return false
 	}
 
-	if !c.MacAddress.Null && c.MacAddress.Value != iface.MacAddress {
+	if !c.MacAddress.IsNull() && c.MacAddress.ValueString() != iface.MacAddress {
 		return false
 	}
 
 	return true
 }
 
-type computeNetworkInterfaceDataSourceType struct{}
-
-func (c computeNetworkInterfaceDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (c computeNetworkInterfaceDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the network interface",
 				Optional:            true,
 				Computed:            true,
 			},
-			"server_id": {
-				Type:                types.Int64Type,
+			"server_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the server",
 				Required:            true,
 			},
-			"network_id": {
-				Type:                types.Int64Type,
+			"network_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the network",
 				Optional:            true,
 				Computed:            true,
 			},
 
-			"private_ip": {
-				Type:                types.StringType,
+			"private_ip": schema.StringAttribute{
 				MarkdownDescription: "private IP address of the network interface",
 				Optional:            true,
 				Computed:            true,
 			},
-			"mac_address": {
-				Type:                types.StringType,
+			"mac_address": schema.StringAttribute{
 				MarkdownDescription: "MAC address of the network interface",
 				Optional:            true,
 				Computed:            true,
 			},
 
-			"security_group_ids": {
-				Type:                types.ListType{ElemType: types.Int64Type},
+			"security_group_ids": schema.ListAttribute{
+				ElementType:         types.Int64Type,
 				MarkdownDescription: "list of security group IDs to assign to the network interface",
 				Computed:            true,
 			},
-			"security": {
-				Type:                types.BoolType,
+			"security": schema.BoolAttribute{
 				MarkdownDescription: "whether security groups are enabled on the network interface",
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeNetworkInterfaceDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeNetworkInterfaceDataSource() datasource.DataSource {
+	return &computeNetworkInterfaceDataSource{}
+}
+
+func (c *computeNetworkInterfaceDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_network_interface"
+}
+
+func (c *computeNetworkInterfaceDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return &computeNetworkInterfaceDataSource{
-		serverService: compute.NewServerService(prov.client),
-	}, diagnostics
+	c.client = client
 }
 
 type computeNetworkInterfaceDataSource struct {
-	serverService compute.ServerService
+	client flowClient
 }
 
-func (c computeNetworkInterfaceDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (c computeNetworkInterfaceDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config computeNetworkInterfaceDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -139,9 +137,9 @@ func (c computeNetworkInterfaceDataSource) Read(ctx context.Context, request tfs
 		return
 	}
 
-	serverID := int(config.ServerID.Value)
+	serverID := int(config.ServerID.ValueInt64())
 
-	list, err := c.serverService.NetworkInterfaces(serverID).List(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := c.client.Compute.NetworkInterface.List(ctx, compute.NetworkInterfaceListReq{ServerID: uint(serverID), Cursor: core.CursorAll})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list network interfaces: %s", err))
 		return

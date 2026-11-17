@@ -4,19 +4,21 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
 	"github.com/hashicorp/terraform-plugin-framework/path"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 var (
-	_ tfsdk.ResourceType            = (*computeElasticIPResourceType)(nil)
-	_ tfsdk.Resource                = (*computeElasticIPResource)(nil)
-	_ tfsdk.ResourceWithImportState = (*computeElasticIPResource)(nil)
+	_ resource.Resource                = (*computeElasticIPResource)(nil)
+	_ resource.ResourceWithConfigure   = (*computeElasticIPResource)(nil)
+	_ resource.ResourceWithImportState = (*computeElasticIPResource)(nil)
 )
 
 type computeElasticIPResourceData struct {
@@ -26,57 +28,58 @@ type computeElasticIPResourceData struct {
 }
 
 func (c *computeElasticIPResourceData) FromEntity(elasticIP compute.ElasticIP) {
-	c.ID = types.Int64{Value: int64(elasticIP.ID)}
-	c.LocationID = types.Int64{Value: int64(elasticIP.Location.ID)}
-	c.PublicIP = types.String{Value: elasticIP.PublicIP}
+	c.ID = types.Int64Value(int64(elasticIP.ID))
+	c.LocationID = types.Int64Value(int64(elasticIP.Location.ID))
+	c.PublicIP = types.StringValue(elasticIP.PublicIP)
 }
 
-type computeElasticIPResourceType struct{}
-
-func (c computeElasticIPResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (c computeElasticIPResource) Schema(ctx context.Context, request resource.SchemaRequest, response *resource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the elastic ip",
 				Computed:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.UseStateForUnknown(),
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
 				},
 			},
-			"location_id": {
-				Type:                types.Int64Type,
+			"location_id": schema.Int64Attribute{
 				MarkdownDescription: "location of the elastic ip",
 				Required:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.RequiresReplace(),
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.RequiresReplace(),
 				},
 			},
-			"public_ip": {
-				Type:                types.StringType,
+			"public_ip": schema.StringAttribute{
 				MarkdownDescription: "public ip address",
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeElasticIPResourceType) NewResource(ctx context.Context, p tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeElasticIPResource() resource.Resource {
+	return &computeElasticIPResource{}
+}
+
+func (c *computeElasticIPResource) Metadata(ctx context.Context, request resource.MetadataRequest, response *resource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_elastic_ip"
+}
+
+func (c *computeElasticIPResource) Configure(ctx context.Context, request resource.ConfigureRequest, response *resource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeElasticIPResource{
-		elasticIPService: compute.NewElasticIPService(prov.client),
-	}, diagnostics
+	c.client = client
 }
 
 type computeElasticIPResource struct {
-	elasticIPService compute.ElasticIPService
+	client flowClient
 }
 
-func (c computeElasticIPResource) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
+func (c computeElasticIPResource) Create(ctx context.Context, request resource.CreateRequest, response *resource.CreateResponse) {
 	var config computeElasticIPResourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -84,13 +87,13 @@ func (c computeElasticIPResource) Create(ctx context.Context, request tfsdk.Crea
 		return
 	}
 
-	create := compute.ElasticIPCreate{
-		LocationID: int(config.LocationID.Value),
+	create := compute.ElasticIPCreateReq{
+		LocationID: int(config.LocationID.ValueInt64()),
 	}
 
 	var elasticIP compute.ElasticIP
 	err := retryCreate(ctx, "create elastic ip", func() (err error) {
-		elasticIP, err = c.elasticIPService.Create(ctx, create)
+		elasticIP, err = c.client.Compute.ElasticIP.Create(ctx, create)
 		return err
 	})
 	if err != nil {
@@ -110,7 +113,7 @@ func (c computeElasticIPResource) Create(ctx context.Context, request tfsdk.Crea
 	response.Diagnostics.Append(diagnostics...)
 }
 
-func (c computeElasticIPResource) Read(ctx context.Context, request tfsdk.ReadResourceRequest, response *tfsdk.ReadResourceResponse) {
+func (c computeElasticIPResource) Read(ctx context.Context, request resource.ReadRequest, response *resource.ReadResponse) {
 	var state computeElasticIPResourceData
 	diagnostics := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diagnostics...)
@@ -118,13 +121,13 @@ func (c computeElasticIPResource) Read(ctx context.Context, request tfsdk.ReadRe
 		return
 	}
 
-	elasticIP, found, err := findComputeElasticIP(ctx, c.elasticIPService, int(state.ID.Value))
+	elasticIP, found, err := findComputeElasticIP(ctx, c.client.Compute.ElasticIP, int(state.ID.ValueInt64()))
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", err.Error())
 		return
 	}
 	if !found {
-		removeGone(ctx, response, fmt.Sprintf("elastic ip %d", state.ID.Value))
+		removeGone(ctx, response, fmt.Sprintf("elastic ip %d", state.ID.ValueInt64()))
 		return
 	}
 
@@ -134,11 +137,11 @@ func (c computeElasticIPResource) Read(ctx context.Context, request tfsdk.ReadRe
 	response.Diagnostics.Append(diagnostics...)
 }
 
-func (c computeElasticIPResource) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
+func (c computeElasticIPResource) Update(ctx context.Context, request resource.UpdateRequest, response *resource.UpdateResponse) {
 	response.Diagnostics.AddError("Not Supported", "updating an elastic ip is not supported")
 }
 
-func (c computeElasticIPResource) Delete(ctx context.Context, request tfsdk.DeleteResourceRequest, response *tfsdk.DeleteResourceResponse) {
+func (c computeElasticIPResource) Delete(ctx context.Context, request resource.DeleteRequest, response *resource.DeleteResponse) {
 	var state computeElasticIPResourceData
 	diagnostics := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diagnostics...)
@@ -147,7 +150,7 @@ func (c computeElasticIPResource) Delete(ctx context.Context, request tfsdk.Dele
 	}
 
 	err := retryDelete(ctx, "delete elastic ip", func() error {
-		return c.elasticIPService.Delete(ctx, int(state.ID.Value))
+		return c.client.Compute.ElasticIP.Delete(ctx, compute.ElasticIPDeleteReq{ID: int(state.ID.ValueInt64())})
 	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete elastic ip: %s", err))
@@ -155,16 +158,16 @@ func (c computeElasticIPResource) Delete(ctx context.Context, request tfsdk.Dele
 	}
 
 	tflog.Trace(ctx, "deleted elastic ip", map[string]interface{}{
-		"id": int(state.ID.Value),
+		"id": int(state.ID.ValueInt64()),
 	})
 }
 
-func (c computeElasticIPResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
+func (c computeElasticIPResource) ImportState(ctx context.Context, request resource.ImportStateRequest, response *resource.ImportStateResponse) {
 	importStatePassthroughInt64ID(ctx, path.Root("id"), request, response)
 }
 
-func findComputeElasticIP(ctx context.Context, service compute.ElasticIPService, id int) (elasticIP compute.ElasticIP, found bool, err error) {
-	list, err := service.List(ctx, goclient.Cursor{NoFilter: 1})
+func findComputeElasticIP(ctx context.Context, service *compute.ElasticIPService, id int) (elasticIP compute.ElasticIP, found bool, err error) {
+	list, err := service.List(ctx, core.CursorAll)
 	if err != nil {
 		return elasticIP, false, fmt.Errorf("unable to list elastic ips: %w", err)
 	}

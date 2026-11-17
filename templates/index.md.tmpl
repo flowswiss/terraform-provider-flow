@@ -1,0 +1,37 @@
+---
+page_title: "flow Provider"
+description: |-
+  Manages compute and kubernetes resources on the Flow Swiss cloud.
+---
+
+# flow Provider
+
+Manages compute and kubernetes resources on the [Flow Swiss](https://flow.swiss/) cloud.
+
+Needs Terraform 1.11 or later.
+
+## Example Usage
+
+```terraform
+terraform {
+  required_providers {
+    flow = {
+      source = "flowswiss/flow"
+    }
+  }
+}
+
+provider "flow" {
+  # or leave it out and set FLOW_TOKEN
+  token = var.flow_token
+}
+```
+
+An argument that is not set comes from the environment: `FLOW_TOKEN`, `FLOW_ENDPOINT`, `FLOW_RETRY_TIMEOUT`.
+
+## Guides
+
+- [Update or replace](https://registry.terraform.io/providers/flowswiss/flow/latest/docs/guides/lifecycle) — which change replaces a resource
+- [Known limitations](https://registry.terraform.io/providers/flowswiss/flow/latest/docs/guides/known-limitations) — what does not work yet, and what to do instead
+
+{{ .SchemaMarkdown | trimspace }}

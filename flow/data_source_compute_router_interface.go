@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
-	_ tfsdk.DataSourceType = (*computeRouterInterfaceDataSourceType)(nil)
-	_ tfsdk.DataSource     = (*computeRouterInterfaceDataSource)(nil)
+	_ datasource.DataSource              = (*computeRouterInterfaceDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*computeRouterInterfaceDataSource)(nil)
 )
 
 type computeRouterInterfaceDataSourceData struct {
@@ -26,76 +26,76 @@ type computeRouterInterfaceDataSourceData struct {
 }
 
 func (c *computeRouterInterfaceDataSourceData) FromEntity(routerID int, routerInterface compute.RouterInterface) {
-	c.ID = types.Int64{Value: int64(routerInterface.ID)}
-	c.RouterID = types.Int64{Value: int64(routerID)}
-	c.PrivateIP = types.String{Value: routerInterface.PrivateIP}
-	c.NetworkID = types.Int64{Value: int64(routerInterface.Network.ID)}
+	c.ID = types.Int64Value(int64(routerInterface.ID))
+	c.RouterID = types.Int64Value(int64(routerID))
+	c.PrivateIP = types.StringValue(routerInterface.PrivateIP)
+	c.NetworkID = types.Int64Value(int64(routerInterface.Network.ID))
 }
 
 func (c computeRouterInterfaceDataSourceData) AppliesTo(routerInterface compute.RouterInterface) bool {
-	if !c.ID.Null && c.ID.Value != int64(routerInterface.ID) {
+	if !c.ID.IsNull() && c.ID.ValueInt64() != int64(routerInterface.ID) {
 		return false
 	}
 
-	if !c.NetworkID.Null && c.NetworkID.Value != int64(routerInterface.Network.ID) {
+	if !c.NetworkID.IsNull() && c.NetworkID.ValueInt64() != int64(routerInterface.Network.ID) {
 		return false
 	}
 
-	if !c.PrivateIP.Null && c.PrivateIP.Value != routerInterface.PrivateIP {
+	if !c.PrivateIP.IsNull() && c.PrivateIP.ValueString() != routerInterface.PrivateIP {
 		return false
 	}
 
 	return true
 }
 
-type computeRouterInterfaceDataSourceType struct{}
-
-func (c computeRouterInterfaceDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (c computeRouterInterfaceDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the router interface",
 				Optional:            true,
 				Computed:            true,
 			},
-			"router_id": {
-				Type:                types.Int64Type,
+			"router_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the router",
 				Required:            true,
 			},
-			"network_id": {
-				Type:                types.Int64Type,
+			"network_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the network",
 				Optional:            true,
 				Computed:            true,
 			},
-			"private_ip": {
-				Type:                types.StringType,
+			"private_ip": schema.StringAttribute{
 				MarkdownDescription: "private IP address of the router interface",
 				Optional:            true,
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeRouterInterfaceDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeRouterInterfaceDataSource() datasource.DataSource {
+	return &computeRouterInterfaceDataSource{}
+}
+
+func (c *computeRouterInterfaceDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_router_interface"
+}
+
+func (c *computeRouterInterfaceDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeRouterInterfaceDataSource{
-		client: prov.client,
-	}, diagnostics
+	c.client = client
 }
 
 type computeRouterInterfaceDataSource struct {
-	client goclient.Client
+	client flowClient
 }
 
-func (c computeRouterInterfaceDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (c computeRouterInterfaceDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config computeRouterInterfaceDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -103,8 +103,8 @@ func (c computeRouterInterfaceDataSource) Read(ctx context.Context, request tfsd
 		return
 	}
 
-	routerID := int(config.RouterID.Value)
-	list, err := compute.NewRouterInterfaceService(c.client, routerID).List(ctx, goclient.Cursor{NoFilter: 1})
+	routerID := int(config.RouterID.ValueInt64())
+	list, err := c.client.Compute.RouterInterface.List(ctx, compute.RouterInterfaceListReq{RouterID: uint(routerID), Cursor: core.CursorAll})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list router interfaces: %s", err))
 		return

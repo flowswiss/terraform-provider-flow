@@ -28,6 +28,7 @@ Import: `terraform import flow_compute_load_balancer_pool.<name> <load_balancer_
 
 - `certificate_id` (Number) unique identifier of the certificate
 - `sticky_session` (Boolean) whether the load balancer pool is sticky
+- `timeouts` (Block, Optional) (see [below for nested schema](#nestedblock--timeouts))
 
 ### Read-Only
 
@@ -45,8 +46,8 @@ Optional:
 
 - `healthy_threshold` (Number) number of successful health checks before considering the target healthy
 - `http` (Attributes) (see [below for nested schema](#nestedatt--health_check--http))
-- `interval` (String) interval duration of the health check
-- `timeout` (String) timeout duration of the health check
+- `interval` (String) interval duration of the health check, at least one second
+- `timeout` (String) timeout duration of the health check, at least one second
 - `unhealthy_threshold` (Number) number of failed health checks before considering the target unhealthy
 
 <a id="nestedatt--health_check--http"></a>
@@ -56,3 +57,14 @@ Required:
 
 - `method` (String) HTTP method of the health check
 - `path` (String) path of the health check
+
+
+
+<a id="nestedblock--timeouts"></a>
+### Nested Schema for `timeouts`
+
+Optional:
+
+- `create` (String) bounds the whole create; unset, the load balancer is given 10m to become mutable again; a string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration), such as "30s" or "2h45m"
+- `delete` (String) bounds the whole delete; unset, the load balancer is given 10m to become mutable again; a string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration), such as "30s" or "2h45m"
+- `update` (String) bounds the whole update; unset, the load balancer is given 10m to become mutable again; a string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration), such as "30s" or "2h45m"

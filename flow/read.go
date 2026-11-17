@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
@@ -15,8 +15,7 @@ func isNotFound(err error) bool {
 	return statusCode(err) == http.StatusNotFound
 }
 
-// removeGone drops the resource from the state
-func removeGone(ctx context.Context, response *tfsdk.ReadResourceResponse, what string) {
+func removeGone(ctx context.Context, response *resource.ReadResponse, what string) {
 	tflog.Debug(ctx, "object gone, removing from state", map[string]interface{}{"object": what})
 	response.State.RemoveResource(ctx)
 }

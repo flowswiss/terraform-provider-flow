@@ -4,64 +4,74 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient/compute"
-	"github.com/flowswiss/goclient/kubernetes"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/kubernetes"
+	"github.com/hashicorp/terraform-plugin-framework-timeouts/datasource/timeouts"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
-	_ tfsdk.DataSourceType = (*kubernetesKubeConfigDataSourceType)(nil)
-	_ tfsdk.DataSource     = (*kubernetesKubeConfigDataSource)(nil)
+	_ datasource.DataSource              = (*kubernetesKubeConfigDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*kubernetesKubeConfigDataSource)(nil)
 )
 
 type kubernetesKubeConfigDataSourceData struct {
 	ClusterID  types.Int64  `tfsdk:"cluster_id"`
 	KubeConfig types.String `tfsdk:"kube_config"`
+
+	Timeouts timeouts.Value `tfsdk:"timeouts"`
 }
 
 func (k *kubernetesKubeConfigDataSourceData) FromEntity(clusterID int, kubeConfig kubernetes.ClusterKubeConfig) {
-	k.ClusterID = types.Int64{Value: int64(clusterID)}
-	k.KubeConfig = types.String{Value: kubeConfig.KubeConfig}
+	k.ClusterID = types.Int64Value(int64(clusterID))
+	k.KubeConfig = types.StringValue(kubeConfig.KubeConfig)
 }
 
-type kubernetesKubeConfigDataSourceType struct{}
-
-func (k kubernetesKubeConfigDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"cluster_id": {
-				Type:                types.Int64Type,
+func (k kubernetesKubeConfigDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"cluster_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the cluster",
 				Required:            true,
 			},
-			"kube_config": {
-				Type:                types.StringType,
+			"kube_config": schema.StringAttribute{
 				MarkdownDescription: "kube config of the cluster",
 				Computed:            true,
 				Sensitive:           true,
 			},
 		},
-	}, nil
+		Blocks: map[string]schema.Block{
+			"timeouts": timeouts.BlockWithOpts(ctx, timeouts.Opts{
+				ReadDescription: timeoutDescription("bounds the whole read; unset, the cluster is given 20m to become ready"),
+			}),
+		},
+	}
 }
 
-func (k kubernetesKubeConfigDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newKubernetesKubeConfigDataSource() datasource.DataSource {
+	return &kubernetesKubeConfigDataSource{}
+}
+
+func (k *kubernetesKubeConfigDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_kubernetes_kube_config"
+}
+
+func (k *kubernetesKubeConfigDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return kubernetesKubeConfigDataSource{
-		clusterService: kubernetes.NewClusterService(prov.client),
-	}, diagnostics
+	k.client = client
 }
 
 type kubernetesKubeConfigDataSource struct {
-	clusterService kubernetes.ClusterService
+	client flowClient
 }
 
-func (k kubernetesKubeConfigDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (k kubernetesKubeConfigDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config kubernetesKubeConfigDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -69,29 +79,32 @@ func (k kubernetesKubeConfigDataSource) Read(ctx context.Context, request tfsdk.
 		return
 	}
 
-	clusterID := int(config.ClusterID.Value)
+	ctx, cancel := withTimeout(ctx, config.Timeouts.Read, &response.Diagnostics)
+	defer cancel()
 
-	// the kube-config is refused  until the cluster is healthy and unlocked — the plain get first so a wrong id fails at once
-	cluster, err := k.clusterService.Get(ctx, clusterID)
+	clusterID := int(config.ClusterID.ValueInt64())
+
+	cluster, err := k.client.Kubernetes.Cluster.Get(ctx, kubernetes.ClusterGetReq{ID: uint(clusterID)})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get cluster: %s", err))
 		return
 	}
 	if cluster.Locked || cluster.Status.ID != compute.ClusterStatusHealthy {
-		if _, err := waitForClusterReady(ctx, k.clusterService, clusterID); err != nil {
+		if _, err := waitForClusterReady(ctx, k.client.Kubernetes.Cluster, clusterID); err != nil {
 			response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for cluster to be ready: %s", err))
 			return
 		}
 	}
 
-	kubeConfig, err := k.clusterService.GetKubeConfig(ctx, clusterID)
+	kubeConfig, err := k.client.Kubernetes.Cluster.GetKubeConfig(ctx, kubernetes.ClusterGetReq{ID: uint(clusterID)})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get kube config: %s", err))
 		return
 	}
 
 	var state kubernetesKubeConfigDataSourceData
-	state.FromEntity(int(config.ClusterID.Value), kubeConfig)
+	state.FromEntity(int(config.ClusterID.ValueInt64()), kubeConfig)
+	state.Timeouts = config.Timeouts
 
 	diagnostics = response.State.Set(ctx, state)
 	response.Diagnostics.Append(diagnostics...)

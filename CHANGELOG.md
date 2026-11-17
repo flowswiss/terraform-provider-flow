@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased (planned as v1.2.0)
+
+### Breaking
+- Needs Terraform 1.11 or later.
+- Mac bare metal is gone: `terraform state rm` takes them out of an existing state.
+- These arguments are write-only now: `certificate` and `private_key` on a certificate, `password` and
+  `cloud_init` on a server. Older Terraform cannot set them.
+
+### New
+- `flow_compute_snapshot` resource.
+- `timeouts {}` on every resource that waits.
+- `status` on `flow_compute_load_balancer_member` and its data source.
+- `public_ip` on `flow_compute_load_balancer`.
+- `flow_compute_elastic_ip_load_balancer_attachment` attaches your own elastic ip to a load balancer.
+- `flow_kubernetes_node`, `flow_kubernetes_volume` and `flow_kubernetes_load_balancer` data sources introduced
+
+### Fixes
+- A resource the api created stays in the state when a later step fails.
+- `false` and `0` reach the api.
+- A router can be made private.
+- The state matches the api after an update.
+- Clearer errors for kubernetes version changes and an empty token. Several data source fixes.
+
+### Dependencies
+- framework v0.10.0 → v1.19.0, plugin-go v0.13.0 → v0.31.0, tests on plugin-testing v1.16.0.
+  No behaviour change.
+- New: terraform-plugin-framework-timeouts v0.7.0.
+- CI runs on Terraform 1.11 and on the latest release.
+- goclient v0.2.6 → v2.0.3.
+- Acceptance tests check that nothing is left after a destroy, and cover import, update and the
+  matching data source on every resource that has a test.
+
 ## Unreleased (planned as v1.1.3)
 
 ### Behaviour changes

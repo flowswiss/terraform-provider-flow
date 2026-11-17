@@ -4,7 +4,11 @@ on:
   pull_request:
     paths-ignore:
       - 'README.md'
+  # only the default branch — a branch with an open pull request would otherwise
+  # run the whole suite twice against the same organisation
   push:
+    branches:
+      - master
     paths-ignore:
       - 'README.md'
 
@@ -17,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      has_flow_token: ${{ steps.detect_flow_token.outputs.value }}
+      acceptance_configured: ${{ steps.detect_acceptance_config.outputs.value }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -26,13 +30,18 @@ jobs:
           cache: true
       - run: go mod download
       - run: go build -v .
-      - name: detect flow token
-        id: detect_flow_token
+      # FLOW_TOKEN & FLOW_ENDPOINT have to be configured
+      - name: detect acceptance test configuration
+        id: detect_acceptance_config
+        env:
+          FLOW_TOKEN: ${{ secrets.FLOW_TOKEN }}
+          FLOW_ENDPOINT: ${{ vars.FLOW_ENDPOINT }}
         run: |
-          if [ -n "${{ secrets.FLOW_TOKEN }}" ]; then
+          if [ -n "$FLOW_TOKEN" ] && [ -n "$FLOW_ENDPOINT" ]; then
             echo "value=true" >> "$GITHUB_OUTPUT"
           else
             echo "value=false" >> "$GITHUB_OUTPUT"
+            echo "acceptance tests skipped: FLOW_TOKEN and the FLOW_ENDPOINT variable must both be set" >> "$GITHUB_STEP_SUMMARY"
           fi
 
   generate:
@@ -53,14 +62,21 @@ jobs:
   test:
     name: terraform provider acceptance tests
     needs: build
-    if: ${{ vars.RUN_ACCEPTANCE_TESTS == 'true' && needs.build.outputs.has_flow_token == 'true' }}
+    if: ${{ needs.build.outputs.acceptance_configured == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 75
+    concurrency:
+      group: acceptance-tests-${{ github.repository }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
+      # one matrix job at a time — both run the whole suite against the same org, and
+      # two billable creates for one org race in the api's metrics table
+      max-parallel: 1
       matrix:
         terraform:
-          - '1.2.*'
+          - '1.11.*'
+          - 'latest'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -72,8 +88,10 @@ jobs:
           terraform_version: ${{ matrix.terraform }}
           terraform_wrapper: false
       - run: go mod download
-      - run: go test -v -cover ./...
-        timeout-minutes: 10
+      - name: acceptance tests
+        timeout-minutes: 70
         env:
           TF_ACC: "1"
           FLOW_TOKEN: ${{ secrets.FLOW_TOKEN }}
+          FLOW_ENDPOINT: ${{ vars.FLOW_ENDPOINT }}
+        run: go test -v -cover -count=1 -timeout 60m ./...

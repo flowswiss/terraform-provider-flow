@@ -4,17 +4,17 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/common"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/common"
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
-var _ tfsdk.DataSourceType = (*productDataSourceType)(nil)
-var _ tfsdk.DataSource = (*productDataSource)(nil)
+var _ datasource.DataSource = (*productDataSource)(nil)
+var _ datasource.DataSourceWithConfigure = (*productDataSource)(nil)
 
 type productDataSourceData struct {
 	ID   types.Int64  `tfsdk:"id"`
@@ -23,70 +23,71 @@ type productDataSourceData struct {
 }
 
 func (p *productDataSourceData) FromEntity(product common.Product) {
-	p.ID = types.Int64{Value: int64(product.ID)}
-	p.Name = types.String{Value: product.Name}
-	p.Type = types.String{Value: product.Type.Key}
+	p.ID = types.Int64Value(int64(product.ID))
+	p.Name = types.StringValue(product.Name)
+	p.Type = types.StringValue(product.Type.Key)
 }
 
 func (p productDataSourceData) AppliesTo(product common.Product) bool {
-	if !p.ID.Null && product.ID != int(p.ID.Value) {
+	if !p.ID.IsNull() && product.ID != int(p.ID.ValueInt64()) {
 		return false
 	}
 
-	if !p.Name.Null && product.Name != p.Name.Value {
+	if !p.Name.IsNull() && product.Name != p.Name.ValueString() {
 		return false
 	}
 
-	if !p.Type.Null && product.Type.Key != p.Type.Value {
+	if !p.Type.IsNull() && product.Type.Key != p.Type.ValueString() {
 		return false
 	}
 
 	return true
 }
 
-type productDataSourceType struct{}
-
-func (productDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (productDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the product",
 				Optional:            true,
 				Computed:            true,
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the product",
 				Optional:            true,
 				Computed:            true,
 			},
-			"type": {
-				Type:                types.StringType,
+			"type": schema.StringAttribute{
 				MarkdownDescription: "type of the product",
 				Optional:            true,
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (productDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newProductDataSource() datasource.DataSource {
+	return &productDataSource{}
+}
+
+func (p *productDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_product"
+}
+
+func (p *productDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return productDataSource{
-		productService: common.NewProductService(prov.client),
-	}, diagnostics
+	p.client = client
 }
 
 type productDataSource struct {
-	productService common.ProductService
+	client flowClient
 }
 
-func (p productDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (p productDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config productDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -94,7 +95,7 @@ func (p productDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourc
 		return
 	}
 
-	list, err := p.productService.List(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := p.client.Common.Product.List(ctx, core.CursorAll)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get products: %s", err))
 		return

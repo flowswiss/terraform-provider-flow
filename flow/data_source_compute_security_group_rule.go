@@ -4,16 +4,16 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
-	_ tfsdk.DataSourceType = (*computeSecurityGroupRuleDataSourceType)(nil)
-	_ tfsdk.DataSource     = (*computeSecurityGroupRuleDataSource)(nil)
+	_ datasource.DataSource              = (*computeSecurityGroupRuleDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*computeSecurityGroupRuleDataSource)(nil)
 )
 
 type computeSecurityGroupRuleDataSourceProtocol struct {
@@ -22,10 +22,13 @@ type computeSecurityGroupRuleDataSourceProtocol struct {
 }
 
 func (c *computeSecurityGroupRuleDataSourceProtocol) FromNumber(number int) {
-	c.Number = types.Int64{Value: int64(number)}
+	c.Number = types.Int64Value(int64(number))
 
-	name, found := protocolNumberToName[number]
-	c.Name = types.String{Value: name, Null: !found}
+	if name, found := protocolNumberToName[number]; found {
+		c.Name = types.StringValue(name)
+	} else {
+		c.Name = types.StringNull()
+	}
 }
 
 type computeSecurityGroupRuleDataSourcePortRange struct {
@@ -53,146 +56,139 @@ type computeSecurityGroupRuleDataSourceData struct {
 }
 
 func (c *computeSecurityGroupRuleDataSourceData) FromEntity(securityGroupID int, rule compute.SecurityGroupRule) {
-	c.ID = types.Int64{Value: int64(rule.ID)}
-	c.SecurityGroupID = types.Int64{Value: int64(securityGroupID)}
+	c.ID = types.Int64Value(int64(rule.ID))
+	c.SecurityGroupID = types.Int64Value(int64(securityGroupID))
 
-	c.Direction = types.String{Value: rule.Direction}
+	c.Direction = types.StringValue(rule.Direction)
 	c.Protocol = &computeSecurityGroupRuleDataSourceProtocol{}
 	c.Protocol.FromNumber(rule.Protocol)
 
-	if rule.FromPort != 0 && rule.ToPort != 0 {
+	if rule.Protocol == compute.ProtocolTCP || rule.Protocol == compute.ProtocolUDP {
 		c.PortRange = &computeSecurityGroupRuleDataSourcePortRange{
-			From: types.Int64{Value: int64(rule.FromPort)},
-			To:   types.Int64{Value: int64(rule.ToPort)},
+			From: types.Int64Value(int64(rule.FromPort)),
+			To:   types.Int64Value(int64(rule.ToPort)),
 		}
 	}
 
-	if rule.ICMPType != 0 && rule.ICMPCode != 0 {
+	if rule.Protocol == compute.ProtocolICMP {
 		c.ICMP = &computeSecurityGroupRuleDataSourceICMP{
-			Type: types.Int64{Value: int64(rule.ICMPType)},
-			Code: types.Int64{Value: int64(rule.ICMPCode)},
+			Type: types.Int64Value(int64(rule.ICMPType)),
+			Code: types.Int64Value(int64(rule.ICMPCode)),
 		}
 	}
 
 	if rule.IPRange == "" {
-		c.IPRange = types.String{Null: true}
+		c.IPRange = types.StringNull()
 	} else {
-		c.IPRange = types.String{Value: rule.IPRange}
+		c.IPRange = types.StringValue(rule.IPRange)
 	}
 
 	if rule.RemoteSecurityGroup.ID == 0 {
-		c.RemoteSecurityGroupID = types.Int64{Null: true}
+		c.RemoteSecurityGroupID = types.Int64Null()
 	} else {
-		c.RemoteSecurityGroupID = types.Int64{Value: int64(rule.RemoteSecurityGroup.ID)}
+		c.RemoteSecurityGroupID = types.Int64Value(int64(rule.RemoteSecurityGroup.ID))
 	}
 }
 
 func (c computeSecurityGroupRuleDataSourceData) AppliesTo(rule compute.SecurityGroupRule) bool {
-	if !c.ID.Null && c.ID.Value != int64(rule.ID) {
+	if !c.ID.IsNull() && c.ID.ValueInt64() != int64(rule.ID) {
 		return false
 	}
 
 	return true
 }
 
-type computeSecurityGroupRuleDataSourceType struct{}
-
-func (c computeSecurityGroupRuleDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (c computeSecurityGroupRuleDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the security group rule",
 				Required:            true,
 			},
-			"security_group_id": {
-				Type:                types.Int64Type,
+			"security_group_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the security group",
 				Required:            true,
 			},
-			"direction": {
-				Type:                types.StringType,
+			"direction": schema.StringAttribute{
 				MarkdownDescription: "direction of the security group rule (ingress or egress)",
 				Computed:            true,
 			},
-			"protocol": {
-				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-					"number": {
-						Type:                types.Int64Type,
+			"protocol": schema.SingleNestedAttribute{
+				Attributes: map[string]schema.Attribute{
+					"number": schema.Int64Attribute{
 						MarkdownDescription: "iana protocol number of the security group rule",
 						Computed:            true,
 					},
-					"name": {
-						Type:                types.StringType,
+					"name": schema.StringAttribute{
 						MarkdownDescription: "protocol name of the security group rule",
 						Computed:            true,
 					},
-				}),
+				},
 				MarkdownDescription: "protocol of the security group rule",
 				Computed:            true,
 			},
-			"port_range": {
-				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-					"from": {
-						Type:                types.Int64Type,
+			"port_range": schema.SingleNestedAttribute{
+				Attributes: map[string]schema.Attribute{
+					"from": schema.Int64Attribute{
 						MarkdownDescription: "starting port of the security group rule",
 						Computed:            true,
 					},
-					"to": {
-						Type:                types.Int64Type,
+					"to": schema.Int64Attribute{
 						MarkdownDescription: "ending port of the security group rule",
 						Computed:            true,
 					},
-				}),
+				},
 				MarkdownDescription: "port range of the security group rule",
 				Computed:            true,
 			},
-			"icmp": {
-				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-					"type": {
-						Type:                types.Int64Type,
+			"icmp": schema.SingleNestedAttribute{
+				Attributes: map[string]schema.Attribute{
+					"type": schema.Int64Attribute{
 						MarkdownDescription: "type of the ICMP message",
 						Computed:            true,
 					},
-					"code": {
-						Type:                types.Int64Type,
+					"code": schema.Int64Attribute{
 						MarkdownDescription: "code of the ICMP message",
 						Computed:            true,
 					},
-				}),
+				},
 				MarkdownDescription: "ICMP message of the security group rule",
 				Computed:            true,
 			},
-			"ip_range": {
-				Type:                types.StringType,
+			"ip_range": schema.StringAttribute{
 				MarkdownDescription: "ip range of the security group rule",
 				Computed:            true,
 			},
-			"remote_security_group_id": {
-				Type:                types.Int64Type,
+			"remote_security_group_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the remote security group",
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeSecurityGroupRuleDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeSecurityGroupRuleDataSource() datasource.DataSource {
+	return &computeSecurityGroupRuleDataSource{}
+}
+
+func (c *computeSecurityGroupRuleDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_security_group_rule"
+}
+
+func (c *computeSecurityGroupRuleDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeSecurityGroupRuleDataSource{
-		securityGroupService: compute.NewSecurityGroupService(prov.client),
-	}, diagnostics
+	c.client = client
 }
 
 type computeSecurityGroupRuleDataSource struct {
-	securityGroupService compute.SecurityGroupService
+	client flowClient
 }
 
-func (c computeSecurityGroupRuleDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (c computeSecurityGroupRuleDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config computeSecurityGroupRuleDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -200,10 +196,10 @@ func (c computeSecurityGroupRuleDataSource) Read(ctx context.Context, request tf
 		return
 	}
 
-	securityGroupID := int(config.SecurityGroupID.Value)
-	ruleID := int(config.ID.Value)
+	securityGroupID := int(config.SecurityGroupID.ValueInt64())
+	ruleID := int(config.ID.ValueInt64())
 
-	list, err := c.securityGroupService.Rules(securityGroupID).List(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := c.client.Compute.SecurityGroupRule.List(ctx, compute.SecurityGroupRuleListReq{SecurityGroupID: uint(securityGroupID), Cursor: core.CursorAll})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list security group rules: %s", err))
 		return

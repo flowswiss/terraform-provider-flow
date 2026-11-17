@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 
 	"github.com/flowswiss/terraform-provider-flow/flow"
 )
@@ -36,7 +36,7 @@ func main() {
 		ProtocolVersion: 6,
 	}
 
-	factory := func() tfsdk.Provider {
+	factory := func() provider.Provider {
 		return flow.New(
 			flow.WithVersion(version),
 			flow.WithDefaultEndpoint(defaultEndpoint),

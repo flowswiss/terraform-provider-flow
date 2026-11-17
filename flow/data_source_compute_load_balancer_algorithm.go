@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
-	_ tfsdk.DataSourceType = (*computeLoadBalancerAlgorithmDataSourceType)(nil)
-	_ tfsdk.DataSource     = (*computeLoadBalancerAlgorithmDataSource)(nil)
+	_ datasource.DataSource              = (*computeLoadBalancerAlgorithmDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*computeLoadBalancerAlgorithmDataSource)(nil)
 )
 
 type computeLoadBalancerAlgorithmDataSourceData struct {
@@ -25,70 +25,71 @@ type computeLoadBalancerAlgorithmDataSourceData struct {
 }
 
 func (c *computeLoadBalancerAlgorithmDataSourceData) FromEntity(algorithm compute.LoadBalancerAlgorithm) {
-	c.ID = types.Int64{Value: int64(algorithm.ID)}
-	c.Name = types.String{Value: algorithm.Name}
-	c.Key = types.String{Value: algorithm.Key}
+	c.ID = types.Int64Value(int64(algorithm.ID))
+	c.Name = types.StringValue(algorithm.Name)
+	c.Key = types.StringValue(algorithm.Key)
 }
 
 func (c computeLoadBalancerAlgorithmDataSourceData) AppliesTo(algorithm compute.LoadBalancerAlgorithm) bool {
-	if !c.ID.Null && int(c.ID.Value) != algorithm.ID {
+	if !c.ID.IsNull() && int(c.ID.ValueInt64()) != algorithm.ID {
 		return false
 	}
 
-	if !c.Name.Null && c.Name.Value != algorithm.Name {
+	if !c.Name.IsNull() && c.Name.ValueString() != algorithm.Name {
 		return false
 	}
 
-	if !c.Key.Null && c.Key.Value != algorithm.Key {
+	if !c.Key.IsNull() && c.Key.ValueString() != algorithm.Key {
 		return false
 	}
 
 	return true
 }
 
-type computeLoadBalancerAlgorithmDataSourceType struct{}
-
-func (c computeLoadBalancerAlgorithmDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (c computeLoadBalancerAlgorithmDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the load balancer algorithm",
 				Optional:            true,
 				Computed:            true,
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the load balancer algorithm",
 				Optional:            true,
 				Computed:            true,
 			},
-			"key": {
-				Type:                types.StringType,
+			"key": schema.StringAttribute{
 				MarkdownDescription: "unique key of the load balancer algorithm",
 				Optional:            true,
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeLoadBalancerAlgorithmDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeLoadBalancerAlgorithmDataSource() datasource.DataSource {
+	return &computeLoadBalancerAlgorithmDataSource{}
+}
+
+func (c *computeLoadBalancerAlgorithmDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_load_balancer_algorithm"
+}
+
+func (c *computeLoadBalancerAlgorithmDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeLoadBalancerAlgorithmDataSource{
-		loadBalancerEntityService: compute.NewLoadBalancerEntityService(prov.client),
-	}, diagnostics
+	c.client = client
 }
 
 type computeLoadBalancerAlgorithmDataSource struct {
-	loadBalancerEntityService compute.LoadBalancerEntityService
+	client flowClient
 }
 
-func (c computeLoadBalancerAlgorithmDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (c computeLoadBalancerAlgorithmDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config computeLoadBalancerAlgorithmDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -96,7 +97,7 @@ func (c computeLoadBalancerAlgorithmDataSource) Read(ctx context.Context, reques
 		return
 	}
 
-	list, err := c.loadBalancerEntityService.ListAlgorithms(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := c.client.Compute.LoadBalancerEntity.ListAlgorithms(ctx, core.CursorAll)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list load balancer algorithms: %s", err))
 		return

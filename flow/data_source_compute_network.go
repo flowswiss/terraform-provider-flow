@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
-	_ tfsdk.DataSourceType = (*computeNetworkDataSourceType)(nil)
-	_ tfsdk.DataSource     = (*computeNetworkDataSource)(nil)
+	_ datasource.DataSource              = (*computeNetworkDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*computeNetworkDataSource)(nil)
 )
 
 type computeNetworkDataSourceAllocationPool struct {
@@ -34,110 +34,105 @@ type computeNetworkDataSourceData struct {
 }
 
 func (c *computeNetworkDataSourceData) FromEntity(network compute.Network) {
-	c.ID = types.Int64{Value: int64(network.ID)}
-	c.Name = types.String{Value: network.Name}
-	c.CIDR = types.String{Value: network.CIDR}
-	c.LocationID = types.Int64{Value: int64(network.Location.ID)}
-	c.GatewayIP = types.String{Value: network.GatewayIP}
+	c.ID = types.Int64Value(int64(network.ID))
+	c.Name = types.StringValue(network.Name)
+	c.CIDR = types.StringValue(network.CIDR)
+	c.LocationID = types.Int64Value(int64(network.Location.ID))
+	c.GatewayIP = types.StringValue(network.GatewayIP)
 
 	c.AllocationPool = &computeNetworkDataSourceAllocationPool{
-		Start: types.String{Value: network.AllocationPoolStart},
-		End:   types.String{Value: network.AllocationPoolEnd},
+		Start: types.StringValue(network.AllocationPoolStart),
+		End:   types.StringValue(network.AllocationPoolEnd),
 	}
 
 	c.DomainNameServers = make([]types.String, len(network.DomainNameServers))
 	for idx, domainNameServer := range network.DomainNameServers {
-		c.DomainNameServers[idx] = types.String{Value: domainNameServer}
+		c.DomainNameServers[idx] = types.StringValue(domainNameServer)
 	}
 }
 
 func (c computeNetworkDataSourceData) AppliesTo(network compute.Network) bool {
-	if !c.ID.Null && network.ID != int(c.ID.Value) {
+	if !c.ID.IsNull() && network.ID != int(c.ID.ValueInt64()) {
 		return false
 	}
 
-	if !c.Name.Null && network.Name != c.Name.Value {
+	if !c.Name.IsNull() && network.Name != c.Name.ValueString() {
 		return false
 	}
 
 	return true
 }
 
-type computeNetworkDataSourceType struct{}
-
-func (c computeNetworkDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (c computeNetworkDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the network",
 				Optional:            true,
 				Computed:            true,
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the network",
 				Optional:            true,
 				Computed:            true,
 			},
-			"cidr": {
-				Type:                types.StringType,
+			"cidr": schema.StringAttribute{
 				MarkdownDescription: "CIDR of the network",
 				Computed:            true,
 			},
-			"location_id": {
-				Type:                types.Int64Type,
+			"location_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the location",
 				Computed:            true,
 			},
-			"domain_name_servers": {
-				Type: types.ListType{
-					ElemType: types.StringType,
-				},
+			"domain_name_servers": schema.ListAttribute{
+				ElementType:         types.StringType,
 				MarkdownDescription: "list of domain name servers",
 				Computed:            true,
 			},
-			"allocation_pool": {
-				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-					"start": {
-						Type:                types.StringType,
+			"allocation_pool": schema.SingleNestedAttribute{
+				Attributes: map[string]schema.Attribute{
+					"start": schema.StringAttribute{
 						MarkdownDescription: "start of the allocation pool",
 						Computed:            true,
 					},
-					"end": {
-						Type:                types.StringType,
+					"end": schema.StringAttribute{
 						MarkdownDescription: "end of the allocation pool",
 						Computed:            true,
 					},
-				}),
+				},
 				MarkdownDescription: "allocation pool",
 				Computed:            true,
 			},
-			"gateway_ip": {
-				Type:                types.StringType,
+			"gateway_ip": schema.StringAttribute{
 				MarkdownDescription: "gateway IP of the network",
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeNetworkDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeNetworkDataSource() datasource.DataSource {
+	return &computeNetworkDataSource{}
+}
+
+func (c *computeNetworkDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_network"
+}
+
+func (c *computeNetworkDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeNetworkDataSource{
-		networkService: compute.NewNetworkService(prov.client),
-	}, diagnostics
+	c.client = client
 }
 
 type computeNetworkDataSource struct {
-	networkService compute.NetworkService
+	client flowClient
 }
 
-func (c computeNetworkDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (c computeNetworkDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config computeNetworkDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -145,7 +140,7 @@ func (c computeNetworkDataSource) Read(ctx context.Context, request tfsdk.ReadDa
 		return
 	}
 
-	list, err := c.networkService.List(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := c.client.Compute.Network.List(ctx, core.CursorAll)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list networks: %s", err))
 		return
@@ -154,6 +149,13 @@ func (c computeNetworkDataSource) Read(ctx context.Context, request tfsdk.ReadDa
 	network, err := filter.FindOne(config, list.Items)
 	if err != nil {
 		response.Diagnostics.AddError("Not Found", fmt.Sprintf("unable to find network: %s", err))
+		return
+	}
+
+	// the list endpoint leaves out the name servers, the allocation pool and the gateway
+	network, err = c.client.Compute.Network.Get(ctx, compute.NetworkGetReq{ID: uint(network.ID)})
+	if err != nil {
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get network: %s", err))
 		return
 	}
 

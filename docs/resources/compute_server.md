@@ -24,14 +24,26 @@ description: |-
 
 ### Optional
 
-- `cloud_init` (String) cloud init script
+> **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
+
+- `cloud_init` (String, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) cloud init script; editing it produces no plan, rotate with `terraform apply -replace=`
 - `key_pair_id` (Number) unique identifier of the key pair (linux images require one)
 - `network_id` (Number) unique identifier of the initial network (the organisation's default network when omitted)
-- `password` (String, Sensitive) initial windows password of the server
+- `password` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) initial windows password of the server; editing it produces no plan, rotate with `terraform apply -replace=`
 - `private_ip` (String) initial private ip of the server
 - `security_group_ids` (Set of Number) security groups on the primary network interface — the organisation's default group when omitted; at least one is required
+- `timeouts` (Block, Optional) (see [below for nested schema](#nestedblock--timeouts))
 
 ### Read-Only
 
 - `id` (Number) unique identifier of the server
 - `network_interface_id` (Number) unique identifier of the server's primary network interface — reference it from elastic ip attachments
+
+<a id="nestedblock--timeouts"></a>
+### Nested Schema for `timeouts`
+
+Optional:
+
+- `create` (String) bounds the whole create; unset, the order wait and the wait for the server to boot are bounded at 10m each; a string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration), such as "30s" or "2h45m"
+- `delete` (String) bounds the whole delete; unset, the server is given 10m to disappear; a string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration), such as "30s" or "2h45m"
+- `update` (String) bounds the whole update; unset, a resize is bounded at 10m per step — stop, the upgrade order, back to stopped, start — so up to 40m; a string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration), such as "30s" or "2h45m"

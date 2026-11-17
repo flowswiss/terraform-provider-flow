@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
-	_ tfsdk.DataSourceType = (*computeSnapshotDataSourceType)(nil)
-	_ tfsdk.DataSource     = (*computeSnapshotDataSource)(nil)
+	_ datasource.DataSource              = (*computeSnapshotDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*computeSnapshotDataSource)(nil)
 )
 
 type computeSnapshotDataSourceData struct {
@@ -27,85 +27,81 @@ type computeSnapshotDataSourceData struct {
 }
 
 func (c *computeSnapshotDataSourceData) FromEntity(snapshot compute.Snapshot) {
-	c.ID = types.Int64{Value: int64(snapshot.ID)}
-	c.Name = types.String{Value: snapshot.Name}
-	c.VolumeID = types.Int64{Value: int64(snapshot.Volume.ID)}
-	c.Size = types.Int64{Value: int64(snapshot.Size)}
-	c.CreatedAt = types.String{Value: snapshot.CreatedAt.String()}
+	c.ID = types.Int64Value(int64(snapshot.ID))
+	c.Name = types.StringValue(snapshot.Name)
+	c.VolumeID = types.Int64Value(int64(snapshot.Volume.ID))
+	c.Size = types.Int64Value(int64(snapshot.Size))
+	c.CreatedAt = types.StringValue(snapshot.CreatedAt.String())
 }
 
 func (c computeSnapshotDataSourceData) AppliesTo(snapshot compute.Snapshot) bool {
-	if !c.ID.Null && c.ID.Value != int64(snapshot.ID) {
+	if !c.ID.IsNull() && c.ID.ValueInt64() != int64(snapshot.ID) {
 		return false
 	}
 
-	if !c.Name.Null && c.Name.Value != snapshot.Name {
+	if !c.Name.IsNull() && c.Name.ValueString() != snapshot.Name {
 		return false
 	}
 
-	if !c.VolumeID.Null && c.VolumeID.Value != int64(snapshot.Volume.ID) {
+	if !c.VolumeID.IsNull() && c.VolumeID.ValueInt64() != int64(snapshot.Volume.ID) {
 		return false
 	}
 
 	return true
 }
 
-type computeSnapshotDataSourceType struct{}
-
-func (c computeSnapshotDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (c computeSnapshotDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the snapshot",
 				Optional:            true,
 				Computed:            true,
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the snapshot",
 				Optional:            true,
 				Computed:            true,
 			},
-			"volume_id": {
-				Type:                types.Int64Type,
+			"volume_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the volume",
 				Optional:            true,
 				Computed:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.RequiresReplace(),
-				},
 			},
-			"size": {
-				Type:                types.Int64Type,
+			"size": schema.Int64Attribute{
 				MarkdownDescription: "size of the snapshot in GiB",
 				Computed:            true,
 			},
-			"created_at": {
-				Type:                types.StringType,
+			"created_at": schema.StringAttribute{
 				MarkdownDescription: "date and time when the snapshot was created",
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeSnapshotDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeSnapshotDataSource() datasource.DataSource {
+	return &computeSnapshotDataSource{}
+}
+
+func (c *computeSnapshotDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_snapshot"
+}
+
+func (c *computeSnapshotDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeSnapshotDataSource{
-		snapshotService: compute.NewSnapshotService(prov.client),
-	}, diagnostics
+	c.client = client
 }
 
 type computeSnapshotDataSource struct {
-	snapshotService compute.SnapshotService
+	client flowClient
 }
 
-func (c computeSnapshotDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (c computeSnapshotDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config computeSnapshotDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -113,7 +109,7 @@ func (c computeSnapshotDataSource) Read(ctx context.Context, request tfsdk.ReadD
 		return
 	}
 
-	list, err := c.snapshotService.List(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := c.client.Compute.Snapshot.List(ctx, core.CursorAll)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list snapshots: %s", err))
 		return

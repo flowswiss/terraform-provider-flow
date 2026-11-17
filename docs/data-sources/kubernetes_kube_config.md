@@ -19,6 +19,17 @@ description: |-
 
 - `cluster_id` (Number) unique identifier of the cluster
 
+### Optional
+
+- `timeouts` (Block, Optional) (see [below for nested schema](#nestedblock--timeouts))
+
 ### Read-Only
 
 - `kube_config` (String, Sensitive) kube config of the cluster
+
+<a id="nestedblock--timeouts"></a>
+### Nested Schema for `timeouts`
+
+Optional:
+
+- `read` (String) bounds the whole read; unset, the cluster is given 20m to become ready; a string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration), such as "30s" or "2h45m"

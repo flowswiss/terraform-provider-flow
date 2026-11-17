@@ -4,17 +4,17 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
-var _ tfsdk.DataSourceType = (*computeImageDataSourceType)(nil)
-var _ tfsdk.DataSource = (*computeImageDataSource)(nil)
+var _ datasource.DataSource = (*computeImageDataSource)(nil)
+var _ datasource.DataSourceWithConfigure = (*computeImageDataSource)(nil)
 
 type computeImageDataSourceData struct {
 	ID              types.Int64  `tfsdk:"id"`
@@ -28,116 +28,112 @@ type computeImageDataSourceData struct {
 }
 
 func (i *computeImageDataSourceData) FromEntity(image compute.Image) {
-	i.ID = types.Int64{Value: int64(image.ID)}
-	i.OperatingSystem = types.String{Value: image.OperatingSystem}
-	i.Version = types.String{Value: image.Version}
-	i.Key = types.String{Value: image.Key}
-	i.Category = types.String{Value: image.Category}
-	i.Type = types.String{Value: image.Type}
-	i.Username = types.String{Value: image.Username}
-	i.MinRootDiskSize = types.Int64{Value: int64(image.MinRootDiskSize)}
+	i.ID = types.Int64Value(int64(image.ID))
+	i.OperatingSystem = types.StringValue(image.OperatingSystem)
+	i.Version = types.StringValue(image.Version)
+	i.Key = types.StringValue(image.Key)
+	i.Category = types.StringValue(image.Category)
+	i.Type = types.StringValue(image.Type)
+	i.Username = types.StringValue(image.Username)
+	i.MinRootDiskSize = types.Int64Value(int64(image.MinRootDiskSize))
 }
 
 func (i computeImageDataSourceData) AppliesTo(image compute.Image) bool {
-	if !i.ID.Null && image.ID != int(i.ID.Value) {
+	if !i.ID.IsNull() && image.ID != int(i.ID.ValueInt64()) {
 		return false
 	}
 
-	if !i.OperatingSystem.Null && image.OperatingSystem != i.OperatingSystem.Value {
+	if !i.OperatingSystem.IsNull() && image.OperatingSystem != i.OperatingSystem.ValueString() {
 		return false
 	}
 
-	if !i.Version.Null && image.Version != i.Version.Value {
+	if !i.Version.IsNull() && image.Version != i.Version.ValueString() {
 		return false
 	}
 
-	if !i.Key.Null && image.Key != i.Key.Value {
+	if !i.Key.IsNull() && image.Key != i.Key.ValueString() {
 		return false
 
 	}
 
-	if !i.Category.Null && image.Category != i.Category.Value {
+	if !i.Category.IsNull() && image.Category != i.Category.ValueString() {
 		return false
 	}
 
-	if !i.Type.Null && image.Type != i.Type.Value {
+	if !i.Type.IsNull() && image.Type != i.Type.ValueString() {
 		return false
 	}
 
 	return true
 }
 
-type computeImageDataSourceType struct{}
-
-func (computeImageDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (computeImageDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the image",
 				Optional:            true,
 				Computed:            true,
 			},
-			"operating_system": {
-				Type:                types.StringType,
+			"operating_system": schema.StringAttribute{
 				MarkdownDescription: "operating system of the image",
 				Optional:            true,
 				Computed:            true,
 			},
-			"version": {
-				Type:                types.StringType,
+			"version": schema.StringAttribute{
 				MarkdownDescription: "version of the image",
 				Optional:            true,
 				Computed:            true,
 			},
-			"key": {
-				Type:                types.StringType,
+			"key": schema.StringAttribute{
 				MarkdownDescription: "unique key of the image",
 				Optional:            true,
 				Computed:            true,
 			},
-			"category": {
-				Type:                types.StringType,
+			"category": schema.StringAttribute{
 				MarkdownDescription: "category of the image (e.g. 'linux', 'windows')",
 				Optional:            true,
 				Computed:            true,
 			},
-			"type": {
-				Type:                types.StringType,
+			"type": schema.StringAttribute{
 				MarkdownDescription: "type of the image",
 				Optional:            true,
 				Computed:            true,
 			},
-			"username": {
-				Type:                types.StringType,
+			"username": schema.StringAttribute{
 				MarkdownDescription: "default username to connect to the server with",
 				Computed:            true,
 			},
-			"min_root_disk_size": {
-				Type:                types.Int64Type,
+			"min_root_disk_size": schema.Int64Attribute{
 				MarkdownDescription: "minimum root disk size for servers using this image",
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (computeImageDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeImageDataSource() datasource.DataSource {
+	return &computeImageDataSource{}
+}
+
+func (i *computeImageDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_image"
+}
+
+func (i *computeImageDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeImageDataSource{
-		imageService: compute.NewImageService(prov.client),
-	}, diagnostics
+	i.client = client
 }
 
 type computeImageDataSource struct {
-	imageService compute.ImageService
+	client flowClient
 }
 
-func (i computeImageDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (i computeImageDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config computeImageDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -145,7 +141,7 @@ func (i computeImageDataSource) Read(ctx context.Context, request tfsdk.ReadData
 		return
 	}
 
-	list, err := i.imageService.List(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := i.client.Compute.Image.List(ctx, core.CursorAll)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get images: %s", err))
 		return

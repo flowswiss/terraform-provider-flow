@@ -4,17 +4,19 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/flowswiss/goclient/v2/compute"
 	"github.com/hashicorp/terraform-plugin-framework/path"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
-	_ tfsdk.ResourceType            = (*computeSecurityGroupResourceType)(nil)
-	_ tfsdk.Resource                = (*computeSecurityGroupResource)(nil)
-	_ tfsdk.ResourceWithImportState = (*computeSecurityGroupResource)(nil)
+	_ resource.Resource                = (*computeSecurityGroupResource)(nil)
+	_ resource.ResourceWithConfigure   = (*computeSecurityGroupResource)(nil)
+	_ resource.ResourceWithImportState = (*computeSecurityGroupResource)(nil)
 )
 
 type computeSecurityGroupResourceData struct {
@@ -24,57 +26,58 @@ type computeSecurityGroupResourceData struct {
 }
 
 func (c *computeSecurityGroupResourceData) FromEntity(securityGroup compute.SecurityGroup) {
-	c.ID = types.Int64{Value: int64(securityGroup.ID)}
-	c.Name = types.String{Value: securityGroup.Name}
-	c.LocationID = types.Int64{Value: int64(securityGroup.Location.ID)}
+	c.ID = types.Int64Value(int64(securityGroup.ID))
+	c.Name = types.StringValue(securityGroup.Name)
+	c.LocationID = types.Int64Value(int64(securityGroup.Location.ID))
 }
 
-type computeSecurityGroupResourceType struct{}
-
-func (c computeSecurityGroupResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (c computeSecurityGroupResource) Schema(ctx context.Context, request resource.SchemaRequest, response *resource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the security group",
 				Computed:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.UseStateForUnknown(),
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
 				},
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the security group",
 				Required:            true,
 			},
-			"location_id": {
-				Type:                types.Int64Type,
+			"location_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the location",
 				Required:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.RequiresReplace(),
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.RequiresReplace(),
 				},
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeSecurityGroupResourceType) NewResource(ctx context.Context, p tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeSecurityGroupResource() resource.Resource {
+	return &computeSecurityGroupResource{}
+}
+
+func (c *computeSecurityGroupResource) Metadata(ctx context.Context, request resource.MetadataRequest, response *resource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_security_group"
+}
+
+func (c *computeSecurityGroupResource) Configure(ctx context.Context, request resource.ConfigureRequest, response *resource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeSecurityGroupResource{
-		securityGroupService: compute.NewSecurityGroupService(prov.client),
-	}, diagnostics
+	c.client = client
 }
 
 type computeSecurityGroupResource struct {
-	securityGroupService compute.SecurityGroupService
+	client flowClient
 }
 
-func (c computeSecurityGroupResource) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
+func (c computeSecurityGroupResource) Create(ctx context.Context, request resource.CreateRequest, response *resource.CreateResponse) {
 	var config computeSecurityGroupResourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -82,14 +85,14 @@ func (c computeSecurityGroupResource) Create(ctx context.Context, request tfsdk.
 		return
 	}
 
-	create := compute.SecurityGroupCreate{
-		Name:       config.Name.Value,
-		LocationID: int(config.LocationID.Value),
+	create := compute.SecurityGroupCreateReq{
+		Name:       config.Name.ValueString(),
+		LocationID: int(config.LocationID.ValueInt64()),
 	}
 
 	var securityGroup compute.SecurityGroup
 	err := retryCreate(ctx, "create security group", func() (err error) {
-		securityGroup, err = c.securityGroupService.Create(ctx, create)
+		securityGroup, err = c.client.Compute.SecurityGroup.Create(ctx, create)
 		return err
 	})
 	if err != nil {
@@ -104,7 +107,7 @@ func (c computeSecurityGroupResource) Create(ctx context.Context, request tfsdk.
 	response.Diagnostics.Append(diagnostics...)
 }
 
-func (c computeSecurityGroupResource) Read(ctx context.Context, request tfsdk.ReadResourceRequest, response *tfsdk.ReadResourceResponse) {
+func (c computeSecurityGroupResource) Read(ctx context.Context, request resource.ReadRequest, response *resource.ReadResponse) {
 	var state computeSecurityGroupResourceData
 	diagnostics := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diagnostics...)
@@ -112,13 +115,13 @@ func (c computeSecurityGroupResource) Read(ctx context.Context, request tfsdk.Re
 		return
 	}
 
-	securityGroup, err := c.securityGroupService.Get(ctx, int(state.ID.Value))
+	securityGroup, err := c.client.Compute.SecurityGroup.Get(ctx, compute.SecurityGroupGetReq{ID: uint(state.ID.ValueInt64())})
 	if err != nil {
 		if isNotFound(err) {
-			removeGone(ctx, response, fmt.Sprintf("security group %d", state.ID.Value))
+			removeGone(ctx, response, fmt.Sprintf("security group %d", state.ID.ValueInt64()))
 			return
 		}
-		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list security groups: %s", err))
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get security group: %s", err))
 		return
 	}
 
@@ -128,7 +131,7 @@ func (c computeSecurityGroupResource) Read(ctx context.Context, request tfsdk.Re
 	response.Diagnostics.Append(diagnostics...)
 }
 
-func (c computeSecurityGroupResource) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
+func (c computeSecurityGroupResource) Update(ctx context.Context, request resource.UpdateRequest, response *resource.UpdateResponse) {
 	var state computeSecurityGroupResourceData
 	diagnostics := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diagnostics...)
@@ -143,13 +146,21 @@ func (c computeSecurityGroupResource) Update(ctx context.Context, request tfsdk.
 		return
 	}
 
-	update := compute.SecurityGroupUpdate{
-		Name: config.Name.Value,
+	current, err := c.client.Compute.SecurityGroup.Get(ctx, compute.SecurityGroupGetReq{ID: uint(state.ID.ValueInt64())})
+	if err != nil {
+		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get security group: %s", err))
+		return
+	}
+
+	update := compute.SecurityGroupUpdateReq{
+		ID:          uint(state.ID.ValueInt64()),
+		Name:        new(config.Name.ValueString()),
+		Description: new(current.Description),
 	}
 
 	var securityGroup compute.SecurityGroup
-	err := retry(ctx, "update security group", func() (err error) {
-		securityGroup, err = c.securityGroupService.Update(ctx, int(state.ID.Value), update)
+	err = retry(ctx, "update security group", func() (err error) {
+		securityGroup, err = c.client.Compute.SecurityGroup.Update(ctx, update)
 		return err
 	})
 	if err != nil {
@@ -163,7 +174,7 @@ func (c computeSecurityGroupResource) Update(ctx context.Context, request tfsdk.
 	response.Diagnostics.Append(diagnostics...)
 }
 
-func (c computeSecurityGroupResource) Delete(ctx context.Context, request tfsdk.DeleteResourceRequest, response *tfsdk.DeleteResourceResponse) {
+func (c computeSecurityGroupResource) Delete(ctx context.Context, request resource.DeleteRequest, response *resource.DeleteResponse) {
 	var state computeSecurityGroupResourceData
 	diagnostics := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diagnostics...)
@@ -172,7 +183,7 @@ func (c computeSecurityGroupResource) Delete(ctx context.Context, request tfsdk.
 	}
 
 	err := retryDelete(ctx, "delete security group", func() error {
-		return c.securityGroupService.Delete(ctx, int(state.ID.Value))
+		return c.client.Compute.SecurityGroup.Delete(ctx, compute.SecurityGroupDeleteReq{ID: uint(state.ID.ValueInt64())})
 	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete security group: %s", err))
@@ -180,6 +191,6 @@ func (c computeSecurityGroupResource) Delete(ctx context.Context, request tfsdk.
 	}
 }
 
-func (c computeSecurityGroupResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
+func (c computeSecurityGroupResource) ImportState(ctx context.Context, request resource.ImportStateRequest, response *resource.ImportStateResponse) {
 	importStatePassthroughInt64ID(ctx, path.Root("id"), request, response)
 }

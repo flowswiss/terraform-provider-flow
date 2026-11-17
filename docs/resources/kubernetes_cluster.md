@@ -26,7 +26,8 @@ description: |-
 ### Optional
 
 - `public` (Boolean) indicates if the cluster is public
-- `version_id` (Number) unique identifier of the kubernetes version
+- `timeouts` (Block, Optional) (see [below for nested schema](#nestedblock--timeouts))
+- `version_id` (Number) unique identifier of the kubernetes version. the platform assigns it on create and it cannot be chosen; setting it on an existing cluster upgrades along the current version's upgrade paths
 
 ### Read-Only
 
@@ -34,3 +35,12 @@ description: |-
 - `id` (Number) unique identifier of the cluster
 - `public_address` (String) public address of the cluster
 - `security_group_id` (Number) unique identifier of the security group
+
+<a id="nestedblock--timeouts"></a>
+### Nested Schema for `timeouts`
+
+Optional:
+
+- `create` (String) bounds the whole create; unset, the order wait is bounded at 10m and the cluster is given 20m to become ready; a string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration), such as "30s" or "2h45m"
+- `delete` (String) bounds the whole delete; unset, the cluster is given 20m to disappear; a string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration), such as "30s" or "2h45m"
+- `update` (String) bounds the whole update; unset, the cluster is given 20m to unlock after each change; a string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration), such as "30s" or "2h45m"

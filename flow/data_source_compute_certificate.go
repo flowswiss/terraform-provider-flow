@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
-	_ tfsdk.DataSourceType = (*computeCertificateDataSourceType)(nil)
-	_ tfsdk.DataSource     = (*computeCertificateDataSource)(nil)
+	_ datasource.DataSource              = (*computeCertificateDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*computeCertificateDataSource)(nil)
 )
 
 type computeCertificateDataSourceAttributes struct {
@@ -46,179 +46,145 @@ type computeCertificateDataSourceData struct {
 }
 
 func (c *computeCertificateDataSourceData) FromEntity(certificate compute.Certificate) {
-	c.ID = types.Int64{Value: int64(certificate.ID)}
-	c.Name = types.String{Value: certificate.Name}
-	c.LocationID = types.Int64{Value: int64(certificate.Location.ID)}
+	c.ID = types.Int64Value(int64(certificate.ID))
+	c.Name = types.StringValue(certificate.Name)
+	c.LocationID = types.Int64Value(int64(certificate.Location.ID))
 
 	c.Info = &computeCertificateDataSourceInfo{
 		Subject: &computeCertificateDataSourceAttributes{
-			CommonName:         types.String{Value: certificate.Details.Subject["CN"]},
-			OrganizationalUnit: types.String{Value: certificate.Details.Subject["OU"]},
-			Organization:       types.String{Value: certificate.Details.Subject["O"]},
-			Locality:           types.String{Value: certificate.Details.Subject["L"]},
-			Province:           types.String{Value: certificate.Details.Subject["P"]},
-			Country:            types.String{Value: certificate.Details.Subject["C"]},
+			CommonName:         types.StringValue(certificate.Details.Subject["CN"]),
+			OrganizationalUnit: types.StringValue(certificate.Details.Subject["OU"]),
+			Organization:       types.StringValue(certificate.Details.Subject["O"]),
+			Locality:           types.StringValue(certificate.Details.Subject["L"]),
+			Province:           types.StringValue(certificate.Details.Subject["P"]),
+			Country:            types.StringValue(certificate.Details.Subject["C"]),
 		},
 		Issuer: &computeCertificateDataSourceAttributes{
-			CommonName:         types.String{Value: certificate.Details.Issuer["CN"]},
-			OrganizationalUnit: types.String{Value: certificate.Details.Issuer["OU"]},
-			Organization:       types.String{Value: certificate.Details.Issuer["O"]},
-			Locality:           types.String{Value: certificate.Details.Issuer["L"]},
-			Province:           types.String{Value: certificate.Details.Issuer["P"]},
-			Country:            types.String{Value: certificate.Details.Issuer["C"]},
+			CommonName:         types.StringValue(certificate.Details.Issuer["CN"]),
+			OrganizationalUnit: types.StringValue(certificate.Details.Issuer["OU"]),
+			Organization:       types.StringValue(certificate.Details.Issuer["O"]),
+			Locality:           types.StringValue(certificate.Details.Issuer["L"]),
+			Province:           types.StringValue(certificate.Details.Issuer["P"]),
+			Country:            types.StringValue(certificate.Details.Issuer["C"]),
 		},
-		NotBefore:    types.String{Value: certificate.Details.ValidFrom.String()},
-		NotAfter:     types.String{Value: certificate.Details.ValidTo.String()},
-		SerialNumber: types.String{Value: certificate.Details.Serial},
+		NotBefore:    types.StringValue(certificate.Details.ValidFrom.String()),
+		NotAfter:     types.StringValue(certificate.Details.ValidTo.String()),
+		SerialNumber: types.StringValue(certificate.Details.Serial),
 	}
 }
 
 func (c computeCertificateDataSourceData) AppliesTo(certificate compute.Certificate) bool {
-	if !c.ID.Null && c.ID.Value != int64(certificate.ID) {
+	if !c.ID.IsNull() && c.ID.ValueInt64() != int64(certificate.ID) {
 		return false
 	}
 
-	if !c.Name.Null && c.Name.Value != certificate.Name {
+	if !c.Name.IsNull() && c.Name.ValueString() != certificate.Name {
 		return false
 	}
 
-	if !c.LocationID.Null && c.LocationID.Value != int64(certificate.Location.ID) {
+	if !c.LocationID.IsNull() && c.LocationID.ValueInt64() != int64(certificate.Location.ID) {
 		return false
 	}
 
 	return true
 }
 
-type computeCertificateDataSourceType struct{}
-
-func (c computeCertificateDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	certificateInfoAttributes := map[string]tfsdk.Attribute{
-		"common_name": {
-			Type:                types.StringType,
+func (c computeCertificateDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	certificateInfoAttributes := map[string]schema.Attribute{
+		"common_name": schema.StringAttribute{
 			MarkdownDescription: "common name of the certificate (CN)",
 			Computed:            true,
 		},
-		"organizational_unit": {
-			Type:                types.StringType,
+		"organizational_unit": schema.StringAttribute{
 			MarkdownDescription: "organizational unit of the certificate (OU)",
 			Computed:            true,
 		},
-		"organization": {
-			Type:                types.StringType,
+		"organization": schema.StringAttribute{
 			MarkdownDescription: "organization of the certificate (O)",
 			Computed:            true,
 		},
-		"locality": {
-			Type:                types.StringType,
+		"locality": schema.StringAttribute{
 			MarkdownDescription: "locality of the certificate (L)",
 			Computed:            true,
 		},
-		"province": {
-			Type:                types.StringType,
+		"province": schema.StringAttribute{
 			MarkdownDescription: "province of the certificate (S)",
 			Computed:            true,
 		},
-		"country": {
-			Type:                types.StringType,
+		"country": schema.StringAttribute{
 			MarkdownDescription: "country of the certificate (C)",
 			Computed:            true,
 		},
 	}
 
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the certificate",
 				Computed:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.UseStateForUnknown(),
-				},
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the certificate",
 				Required:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.RequiresReplace(),
-				},
 			},
-			"location_id": {
-				Type:                types.Int64Type,
+			"location_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the location",
 				Required:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.RequiresReplace(),
-				},
 			},
-			"certificate": {
-				Type:                types.StringType,
-				MarkdownDescription: "certificate in base64 encoded PEM format",
-				Required:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.RequiresReplace(),
-				},
-			},
-			"private_key": {
-				Type:                types.StringType,
-				MarkdownDescription: "private key in base64 encoded PEM format",
-				Required:            true,
-				Sensitive:           true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.RequiresReplace(),
-				},
-			},
-			"info": {
-				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-					"subject": {
-						Attributes:          tfsdk.SingleNestedAttributes(certificateInfoAttributes),
+			"info": schema.SingleNestedAttribute{
+				Attributes: map[string]schema.Attribute{
+					"subject": schema.SingleNestedAttribute{
+						Attributes:          certificateInfoAttributes,
 						MarkdownDescription: "subject of the certificate",
 						Computed:            true,
 					},
-					"issuer": {
-						Attributes:          tfsdk.SingleNestedAttributes(certificateInfoAttributes),
+					"issuer": schema.SingleNestedAttribute{
+						Attributes:          certificateInfoAttributes,
 						MarkdownDescription: "issuer of the certificate",
 						Computed:            true,
 					},
-					"not_before": {
-						Type:                types.StringType,
+					"not_before": schema.StringAttribute{
 						MarkdownDescription: "not before date of the certificate",
 						Computed:            true,
 					},
-					"not_after": {
-						Type:                types.StringType,
+					"not_after": schema.StringAttribute{
 						MarkdownDescription: "not after date of the certificate",
 						Computed:            true,
 					},
-					"serial_number": {
-						Type:                types.StringType,
+					"serial_number": schema.StringAttribute{
 						MarkdownDescription: "serial number of the certificate",
 						Computed:            true,
 					},
-				}),
+				},
 				MarkdownDescription: "information about the certificate",
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeCertificateDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeCertificateDataSource() datasource.DataSource {
+	return &computeCertificateDataSource{}
+}
+
+func (c *computeCertificateDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_certificate"
+}
+
+func (c *computeCertificateDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeCertificateDataSource{
-		certificateService: compute.NewCertificateService(prov.client),
-	}, diagnostics
+	c.client = client
 }
 
 type computeCertificateDataSource struct {
-	certificateService compute.CertificateService
+	client flowClient
 }
 
-func (c computeCertificateDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (c computeCertificateDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config computeCertificateDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -226,7 +192,7 @@ func (c computeCertificateDataSource) Read(ctx context.Context, request tfsdk.Re
 		return
 	}
 
-	list, err := c.certificateService.List(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := c.client.Compute.Certificate.List(ctx, core.CursorAll)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list certificates: %s", err))
 		return

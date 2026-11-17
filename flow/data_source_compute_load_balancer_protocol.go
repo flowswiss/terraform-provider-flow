@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
-	_ tfsdk.DataSourceType = (*computeLoadBalancerProtocolDataSourceType)(nil)
-	_ tfsdk.DataSource     = (*computeLoadBalancerProtocolDataSource)(nil)
+	_ datasource.DataSource              = (*computeLoadBalancerProtocolDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*computeLoadBalancerProtocolDataSource)(nil)
 )
 
 type computeLoadBalancerProtocolDataSourceData struct {
@@ -25,70 +25,71 @@ type computeLoadBalancerProtocolDataSourceData struct {
 }
 
 func (c *computeLoadBalancerProtocolDataSourceData) FromEntity(protocol compute.LoadBalancerProtocol) {
-	c.ID = types.Int64{Value: int64(protocol.ID)}
-	c.Name = types.String{Value: protocol.Name}
-	c.Key = types.String{Value: protocol.Key}
+	c.ID = types.Int64Value(int64(protocol.ID))
+	c.Name = types.StringValue(protocol.Name)
+	c.Key = types.StringValue(protocol.Key)
 }
 
 func (c computeLoadBalancerProtocolDataSourceData) AppliesTo(protocol compute.LoadBalancerProtocol) bool {
-	if !c.ID.Null && int(c.ID.Value) != protocol.ID {
+	if !c.ID.IsNull() && int(c.ID.ValueInt64()) != protocol.ID {
 		return false
 	}
 
-	if !c.Name.Null && c.Name.Value != protocol.Name {
+	if !c.Name.IsNull() && c.Name.ValueString() != protocol.Name {
 		return false
 	}
 
-	if !c.Key.Null && c.Key.Value != protocol.Key {
+	if !c.Key.IsNull() && c.Key.ValueString() != protocol.Key {
 		return false
 	}
 
 	return true
 }
 
-type computeLoadBalancerProtocolDataSourceType struct{}
-
-func (c computeLoadBalancerProtocolDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (c computeLoadBalancerProtocolDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the load balancer protocol",
 				Optional:            true,
 				Computed:            true,
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the load balancer protocol",
 				Optional:            true,
 				Computed:            true,
 			},
-			"key": {
-				Type:                types.StringType,
+			"key": schema.StringAttribute{
 				MarkdownDescription: "unique key of the load balancer protocol",
 				Optional:            true,
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeLoadBalancerProtocolDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeLoadBalancerProtocolDataSource() datasource.DataSource {
+	return &computeLoadBalancerProtocolDataSource{}
+}
+
+func (c *computeLoadBalancerProtocolDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_load_balancer_protocol"
+}
+
+func (c *computeLoadBalancerProtocolDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeLoadBalancerProtocolDataSource{
-		loadBalancerEntityService: compute.NewLoadBalancerEntityService(prov.client),
-	}, diagnostics
+	c.client = client
 }
 
 type computeLoadBalancerProtocolDataSource struct {
-	loadBalancerEntityService compute.LoadBalancerEntityService
+	client flowClient
 }
 
-func (c computeLoadBalancerProtocolDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (c computeLoadBalancerProtocolDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config computeLoadBalancerProtocolDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -96,7 +97,7 @@ func (c computeLoadBalancerProtocolDataSource) Read(ctx context.Context, request
 		return
 	}
 
-	list, err := c.loadBalancerEntityService.ListProtocols(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := c.client.Compute.LoadBalancerEntity.ListProtocols(ctx, core.CursorAll)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list load balancer protocols: %s", err))
 		return

@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
-	_ tfsdk.DataSourceType = (*computeKeyPairDataSourceType)(nil)
-	_ tfsdk.DataSource     = (*computeKeyPairDataSource)(nil)
+	_ datasource.DataSource              = (*computeKeyPairDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*computeKeyPairDataSource)(nil)
 )
 
 type computeKeyPairDataSourceData struct {
@@ -25,70 +25,71 @@ type computeKeyPairDataSourceData struct {
 }
 
 func (c *computeKeyPairDataSourceData) FromEntity(keyPair compute.KeyPair) {
-	c.ID = types.Int64{Value: int64(keyPair.ID)}
-	c.Name = types.String{Value: keyPair.Name}
-	c.Fingerprint = types.String{Value: keyPair.Fingerprint}
+	c.ID = types.Int64Value(int64(keyPair.ID))
+	c.Name = types.StringValue(keyPair.Name)
+	c.Fingerprint = types.StringValue(keyPair.Fingerprint)
 }
 
 func (c computeKeyPairDataSourceData) AppliesTo(keyPair compute.KeyPair) bool {
-	if !c.ID.Null && int(c.ID.Value) != keyPair.ID {
+	if !c.ID.IsNull() && int(c.ID.ValueInt64()) != keyPair.ID {
 		return false
 	}
 
-	if !c.Name.Null && c.Name.Value != keyPair.Name {
+	if !c.Name.IsNull() && c.Name.ValueString() != keyPair.Name {
 		return false
 	}
 
-	if !c.Fingerprint.Null && c.Fingerprint.Value != keyPair.Fingerprint {
+	if !c.Fingerprint.IsNull() && c.Fingerprint.ValueString() != keyPair.Fingerprint {
 		return false
 	}
 
 	return true
 }
 
-type computeKeyPairDataSourceType struct{}
-
-func (t computeKeyPairDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (t computeKeyPairDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the key pair",
 				Optional:            true,
 				Computed:            true,
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the key pair",
 				Optional:            true,
 				Computed:            true,
 			},
-			"fingerprint": {
-				Type:                types.StringType,
+			"fingerprint": schema.StringAttribute{
 				MarkdownDescription: "fingerprint of the key pair",
 				Optional:            true,
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (t computeKeyPairDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeKeyPairDataSource() datasource.DataSource {
+	return &computeKeyPairDataSource{}
+}
+
+func (s *computeKeyPairDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_key_pair"
+}
+
+func (s *computeKeyPairDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeKeyPairDataSource{
-		keyPairService: compute.NewKeyPairService(prov.client),
-	}, diagnostics
+	s.client = client
 }
 
 type computeKeyPairDataSource struct {
-	keyPairService compute.KeyPairService
+	client flowClient
 }
 
-func (s computeKeyPairDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (s computeKeyPairDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config computeKeyPairDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -96,7 +97,7 @@ func (s computeKeyPairDataSource) Read(ctx context.Context, request tfsdk.ReadDa
 		return
 	}
 
-	list, err := s.keyPairService.List(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := s.client.Compute.KeyPair.List(ctx, core.CursorAll)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list key pairs: %s", err))
 		return

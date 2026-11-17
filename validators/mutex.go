@@ -7,16 +7,16 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 )
 
-var _ tfsdk.ResourceConfigValidator = (*mutuallyExclusiveValidator)(nil)
+var _ resource.ConfigValidator = (*mutuallyExclusiveValidator)(nil)
 
 type mutuallyExclusiveValidator struct {
 	attributes []path.Path
 }
 
-func MutuallyExclusive(attributes ...string) tfsdk.ResourceConfigValidator {
+func MutuallyExclusive(attributes ...string) resource.ConfigValidator {
 	attributePaths := make([]path.Path, len(attributes))
 	for i, attribute := range attributes {
 		attributePaths[i] = path.Root(attribute)
@@ -38,7 +38,7 @@ func (m mutuallyExclusiveValidator) MarkdownDescription(ctx context.Context) str
 	return m.Description(ctx)
 }
 
-func (m mutuallyExclusiveValidator) ValidateResource(ctx context.Context, request tfsdk.ValidateResourceConfigRequest, response *tfsdk.ValidateResourceConfigResponse) {
+func (m mutuallyExclusiveValidator) ValidateResource(ctx context.Context, request resource.ValidateConfigRequest, response *resource.ValidateConfigResponse) {
 	previousAttributePath := path.Empty()
 
 	for _, attribute := range m.attributes {

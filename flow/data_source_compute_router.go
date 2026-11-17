@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
-	_ tfsdk.DataSourceType = (*computeRouterDataSourceType)(nil)
-	_ tfsdk.DataSource     = (*computeRouterDataSource)(nil)
+	_ datasource.DataSource              = (*computeRouterDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*computeRouterDataSource)(nil)
 )
 
 type computeRouterDataSourceData struct {
@@ -27,76 +27,80 @@ type computeRouterDataSourceData struct {
 }
 
 func (c *computeRouterDataSourceData) FromEntity(router compute.Router) {
-	c.ID = types.Int64{Value: int64(router.ID)}
-	c.Name = types.String{Value: router.Name}
-	c.LocationID = types.Int64{Value: int64(router.Location.ID)}
-	c.Public = types.Bool{Value: router.Public}
+	c.ID = types.Int64Value(int64(router.ID))
+	c.Name = types.StringValue(router.Name)
+	c.LocationID = types.Int64Value(int64(router.Location.ID))
+	c.Public = types.BoolValue(router.Public)
+
+	c.PublicIP = types.StringNull()
+	if router.Public {
+		c.PublicIP = types.StringValue(router.PublicIP)
+	}
 }
 
 func (c computeRouterDataSourceData) AppliesTo(router compute.Router) bool {
-	if !c.ID.Null && int(c.ID.Value) != router.ID {
+	if !c.ID.IsNull() && int(c.ID.ValueInt64()) != router.ID {
 		return false
 	}
 
-	if !c.Name.Null && c.Name.Value != router.Name {
+	if !c.Name.IsNull() && c.Name.ValueString() != router.Name {
 		return false
 	}
 
 	return true
 }
 
-type computeRouterDataSourceType struct{}
-
-func (c computeRouterDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (c computeRouterDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the router",
 				Optional:            true,
 				Computed:            true,
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the router",
 				Optional:            true,
 				Computed:            true,
 			},
-			"location_id": {
-				Type:                types.Int64Type,
+			"location_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the location",
 				Computed:            true,
 			},
-			"public": {
-				Type:                types.BoolType,
+			"public": schema.BoolAttribute{
 				MarkdownDescription: "if the router is be public",
 				Computed:            true,
 			},
-			"public_ip": {
-				Type:                types.StringType,
+			"public_ip": schema.StringAttribute{
 				MarkdownDescription: "public IP of the router",
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeRouterDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeRouterDataSource() datasource.DataSource {
+	return &computeRouterDataSource{}
+}
+
+func (c *computeRouterDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_router"
+}
+
+func (c *computeRouterDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeRouterDataSource{
-		routerService: compute.NewRouterService(prov.client),
-	}, diagnostics
+	c.client = client
 }
 
 type computeRouterDataSource struct {
-	routerService compute.RouterService
+	client flowClient
 }
 
-func (c computeRouterDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (c computeRouterDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config computeRouterDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -104,7 +108,7 @@ func (c computeRouterDataSource) Read(ctx context.Context, request tfsdk.ReadDat
 		return
 	}
 
-	list, err := c.routerService.List(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := c.client.Compute.Router.List(ctx, core.CursorAll)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list routers: %s", err))
 		return

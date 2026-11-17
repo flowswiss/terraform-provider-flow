@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
 func TestAccComputeKeyPair_Basic(t *testing.T) {
@@ -15,7 +15,7 @@ func TestAccComputeKeyPair_Basic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resource.ParallelTest(t, resource.TestCase{
+	testAccSequential(t, resource.TestCase{
 		ProtoV6ProviderFactories: protoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
@@ -27,6 +27,22 @@ func TestAccComputeKeyPair_Basic(t *testing.T) {
 					resource.TestCheckResourceAttr("flow_compute_key_pair.foobar", "public_key", public),
 				),
 			},
+			{
+				ResourceName:      "flow_compute_key_pair.foobar",
+				ImportState:       true,
+				ImportStateVerify: true,
+				// the api returns the fingerprint only, not the key
+				ImportStateVerifyIgnore: []string{"public_key"},
+			},
+			{
+				Config: fmt.Sprintf(testAccComputeKeyPairConfigBasic, keyPairName, public) + testAccComputeKeyPairConfigDataSource,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrPair("data.flow_compute_key_pair.by_id", "id", "flow_compute_key_pair.foobar", "id"),
+					resource.TestCheckResourceAttrPair("data.flow_compute_key_pair.by_id", "name", "flow_compute_key_pair.foobar", "name"),
+					resource.TestCheckResourceAttrPair("data.flow_compute_key_pair.by_id", "fingerprint", "flow_compute_key_pair.foobar", "fingerprint"),
+					resource.TestCheckResourceAttrPair("data.flow_compute_key_pair.by_name", "id", "flow_compute_key_pair.foobar", "id"),
+				),
+			},
 		},
 	})
 }
@@ -35,5 +51,15 @@ const testAccComputeKeyPairConfigBasic = `
 resource "flow_compute_key_pair" "foobar" {
 	name        = "%s"
 	public_key  = "%s"
+}
+`
+
+const testAccComputeKeyPairConfigDataSource = `
+data "flow_compute_key_pair" "by_id" {
+	id = flow_compute_key_pair.foobar.id
+}
+
+data "flow_compute_key_pair" "by_name" {
+	name = flow_compute_key_pair.foobar.name
 }
 `

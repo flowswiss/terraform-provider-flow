@@ -4,17 +4,21 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/flowswiss/goclient/v2/compute"
 	"github.com/hashicorp/terraform-plugin-framework/path"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
-	_ tfsdk.ResourceType            = (*computeRouterResourceType)(nil)
-	_ tfsdk.Resource                = (*computeRouterResource)(nil)
-	_ tfsdk.ResourceWithImportState = (*computeRouterResource)(nil)
+	_ resource.Resource                = (*computeRouterResource)(nil)
+	_ resource.ResourceWithConfigure   = (*computeRouterResource)(nil)
+	_ resource.ResourceWithImportState = (*computeRouterResource)(nil)
 )
 
 type computeRouterResourceData struct {
@@ -26,81 +30,108 @@ type computeRouterResourceData struct {
 }
 
 func (c *computeRouterResourceData) FromEntity(router compute.Router) {
-	c.ID = types.Int64{Value: int64(router.ID)}
-	c.Name = types.String{Value: router.Name}
-	c.LocationID = types.Int64{Value: int64(router.Location.ID)}
-	c.Public = types.Bool{Value: router.Public}
+	c.ID = types.Int64Value(int64(router.ID))
+	c.Name = types.StringValue(router.Name)
+	c.LocationID = types.Int64Value(int64(router.Location.ID))
+	c.Public = types.BoolValue(router.Public)
 
 	if router.Public {
-		c.PublicIP = types.String{Value: router.PublicIP}
+		c.PublicIP = types.StringValue(router.PublicIP)
 	} else {
-		c.PublicIP = types.String{Null: true}
+		c.PublicIP = types.StringNull()
 	}
 }
 
-type computeRouterResourceType struct{}
-
-func (c computeRouterResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (c computeRouterResource) Schema(ctx context.Context, request resource.SchemaRequest, response *resource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the router",
 				Computed:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.UseStateForUnknown(),
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
 				},
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the router",
 				Required:            true,
 			},
-			"location_id": {
-				Type:                types.Int64Type,
+			"location_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the location",
 				Required:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.RequiresReplace(),
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.RequiresReplace(),
 				},
 			},
-			"public": {
-				Type:                types.BoolType,
+			"public": schema.BoolAttribute{
 				MarkdownDescription: "if the router should be public",
 				Optional:            true,
 				Computed:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.UseStateForUnknown(),
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
 				},
 			},
-			"public_ip": {
-				Type:                types.StringType,
+			"public_ip": schema.StringAttribute{
 				MarkdownDescription: "public IP of the router",
 				Computed:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.UseStateForUnknown(),
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+					routerPublicIPUnknownOnChange{},
 				},
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeRouterResourceType) NewResource(ctx context.Context, p tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+type routerPublicIPUnknownOnChange struct{}
+
+func (routerPublicIPUnknownOnChange) Description(ctx context.Context) string {
+	return "unknown while public changes"
+}
+
+func (routerPublicIPUnknownOnChange) MarkdownDescription(ctx context.Context) string {
+	return "unknown while public changes"
+}
+
+func (routerPublicIPUnknownOnChange) PlanModifyString(ctx context.Context, request planmodifier.StringRequest, response *planmodifier.StringResponse) {
+	if request.State.Raw.IsNull() || request.Plan.Raw.IsNull() {
+		return
 	}
 
-	return computeRouterResource{
-		routerService: compute.NewRouterService(prov.client),
-	}, diagnostics
+	var state, plan types.Bool
+	response.Diagnostics.Append(request.State.GetAttribute(ctx, path.Root("public"), &state)...)
+	response.Diagnostics.Append(request.Plan.GetAttribute(ctx, path.Root("public"), &plan)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	if !plan.Equal(state) {
+		response.PlanValue = types.StringUnknown()
+	}
+}
+
+func newComputeRouterResource() resource.Resource {
+	return &computeRouterResource{}
+}
+
+func (c *computeRouterResource) Metadata(ctx context.Context, request resource.MetadataRequest, response *resource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_router"
+}
+
+func (c *computeRouterResource) Configure(ctx context.Context, request resource.ConfigureRequest, response *resource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
+	}
+
+	c.client = client
 }
 
 type computeRouterResource struct {
-	routerService compute.RouterService
+	client flowClient
 }
 
-func (c computeRouterResource) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
+func (c computeRouterResource) Create(ctx context.Context, request resource.CreateRequest, response *resource.CreateResponse) {
 	var config computeRouterResourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -108,19 +139,19 @@ func (c computeRouterResource) Create(ctx context.Context, request tfsdk.CreateR
 		return
 	}
 
-	create := compute.RouterCreate{
-		Name:       config.Name.Value,
-		LocationID: int(config.LocationID.Value),
+	create := compute.RouterCreateReq{
+		Name:       config.Name.ValueString(),
+		LocationID: int(config.LocationID.ValueInt64()),
 		Public:     true,
 	}
 
-	if !config.Public.Null {
-		create.Public = config.Public.Value
+	if !config.Public.IsNull() {
+		create.Public = config.Public.ValueBool()
 	}
 
 	var router compute.Router
 	err := retryCreate(ctx, "create router", func() (err error) {
-		router, err = c.routerService.Create(ctx, create)
+		router, err = c.client.Compute.Router.Create(ctx, create)
 		return err
 	})
 	if err != nil {
@@ -135,7 +166,7 @@ func (c computeRouterResource) Create(ctx context.Context, request tfsdk.CreateR
 	response.Diagnostics.Append(diagnostics...)
 }
 
-func (c computeRouterResource) Read(ctx context.Context, request tfsdk.ReadResourceRequest, response *tfsdk.ReadResourceResponse) {
+func (c computeRouterResource) Read(ctx context.Context, request resource.ReadRequest, response *resource.ReadResponse) {
 	var state computeRouterResourceData
 	diagnostics := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diagnostics...)
@@ -143,10 +174,10 @@ func (c computeRouterResource) Read(ctx context.Context, request tfsdk.ReadResou
 		return
 	}
 
-	router, err := c.routerService.Get(ctx, int(state.ID.Value))
+	router, err := c.client.Compute.Router.Get(ctx, compute.RouterGetReq{ID: uint(state.ID.ValueInt64())})
 	if err != nil {
 		if isNotFound(err) {
-			removeGone(ctx, response, fmt.Sprintf("router %d", state.ID.Value))
+			removeGone(ctx, response, fmt.Sprintf("router %d", state.ID.ValueInt64()))
 			return
 		}
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get router: %s", err))
@@ -159,7 +190,7 @@ func (c computeRouterResource) Read(ctx context.Context, request tfsdk.ReadResou
 	response.Diagnostics.Append(diagnostics...)
 }
 
-func (c computeRouterResource) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
+func (c computeRouterResource) Update(ctx context.Context, request resource.UpdateRequest, response *resource.UpdateResponse) {
 	var state computeRouterResourceData
 	diagnostics := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diagnostics...)
@@ -174,14 +205,15 @@ func (c computeRouterResource) Update(ctx context.Context, request tfsdk.UpdateR
 		return
 	}
 
-	update := compute.RouterUpdate{
-		Name:   config.Name.Value,
-		Public: config.Public.Value,
+	update := compute.RouterUpdateReq{
+		ID:     uint(state.ID.ValueInt64()),
+		Name:   nonZero(config.Name.ValueString()),
+		Public: boolPointer(config.Public),
 	}
 
 	var router compute.Router
 	err := retry(ctx, "update router", func() (err error) {
-		router, err = c.routerService.Update(ctx, int(state.ID.Value), update)
+		router, err = c.client.Compute.Router.Update(ctx, update)
 		return err
 	})
 	if err != nil {
@@ -195,7 +227,7 @@ func (c computeRouterResource) Update(ctx context.Context, request tfsdk.UpdateR
 	response.Diagnostics.Append(diagnostics...)
 }
 
-func (c computeRouterResource) Delete(ctx context.Context, request tfsdk.DeleteResourceRequest, response *tfsdk.DeleteResourceResponse) {
+func (c computeRouterResource) Delete(ctx context.Context, request resource.DeleteRequest, response *resource.DeleteResponse) {
 	var state computeRouterResourceData
 	diagnostics := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diagnostics...)
@@ -204,7 +236,7 @@ func (c computeRouterResource) Delete(ctx context.Context, request tfsdk.DeleteR
 	}
 
 	err := retryDelete(ctx, "delete router", func() error {
-		return c.routerService.Delete(ctx, int(state.ID.Value))
+		return c.client.Compute.Router.Delete(ctx, compute.RouterDeleteReq{ID: uint(state.ID.ValueInt64())})
 	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete router: %s", err))
@@ -212,6 +244,6 @@ func (c computeRouterResource) Delete(ctx context.Context, request tfsdk.DeleteR
 	}
 }
 
-func (c computeRouterResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
+func (c computeRouterResource) ImportState(ctx context.Context, request resource.ImportStateRequest, response *resource.ImportStateResponse) {
 	importStatePassthroughInt64ID(ctx, path.Root("id"), request, response)
 }

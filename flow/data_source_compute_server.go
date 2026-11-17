@@ -4,19 +4,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/common"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
-	_ tfsdk.DataSourceType = (*computeServerDataSourceType)(nil)
-	_ tfsdk.DataSource     = (*computeServerDataSource)(nil)
+	_ datasource.DataSource              = (*computeServerDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*computeServerDataSource)(nil)
 )
 
 type computeServerDataSourceData struct {
@@ -29,112 +28,108 @@ type computeServerDataSourceData struct {
 }
 
 func (c *computeServerDataSourceData) FromEntity(server compute.Server) {
-	c.ID = types.Int64{Value: int64(server.ID)}
-	c.Name = types.String{Value: server.Name}
-	c.LocationID = types.Int64{Value: int64(server.Location.ID)}
-	c.ImageID = types.Int64{Value: int64(server.Image.ID)}
-	c.ProductID = types.Int64{Value: int64(server.Product.ID)}
-	c.KeyPairID = types.Int64{Value: int64(server.KeyPair.ID)}
+	c.ID = types.Int64Value(int64(server.ID))
+	c.Name = types.StringValue(server.Name)
+	c.LocationID = types.Int64Value(int64(server.Location.ID))
+	c.ImageID = types.Int64Value(int64(server.Image.ID))
+	c.ProductID = types.Int64Value(int64(server.Product.ID))
+	c.KeyPairID = types.Int64Value(int64(server.KeyPair.ID))
 }
 
 func (c computeServerDataSourceData) AppliesTo(server compute.Server) bool {
-	if !c.ID.Null && c.ID.Value != int64(server.ID) {
+	if !c.ID.IsNull() && c.ID.ValueInt64() != int64(server.ID) {
 		return false
 	}
 
-	if !c.Name.Null && c.Name.Value != server.Name {
+	if !c.Name.IsNull() && c.Name.ValueString() != server.Name {
 		return false
 	}
 
-	if !c.LocationID.Null && c.LocationID.Value != int64(server.Location.ID) {
+	if !c.LocationID.IsNull() && c.LocationID.ValueInt64() != int64(server.Location.ID) {
 		return false
 	}
 
-	if !c.ImageID.Null && c.ImageID.Value != int64(server.Image.ID) {
+	if !c.ImageID.IsNull() && c.ImageID.ValueInt64() != int64(server.Image.ID) {
 		return false
 	}
 
-	if !c.ProductID.Null && c.ProductID.Value != int64(server.Product.ID) {
+	if !c.ProductID.IsNull() && c.ProductID.ValueInt64() != int64(server.Product.ID) {
 		return false
 	}
 
-	if !c.KeyPairID.Null && c.KeyPairID.Value != int64(server.KeyPair.ID) {
+	if !c.KeyPairID.IsNull() && c.KeyPairID.ValueInt64() != int64(server.KeyPair.ID) {
 		return false
 	}
 
 	return true
 }
 
-type computeServerDataSourceType struct{}
-
-func (c computeServerDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (c computeServerDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the server",
 				Optional:            true,
 				Computed:            true,
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the server",
 				Optional:            true,
 				Computed:            true,
 			},
-			"location_id": {
-				Type:                types.Int64Type,
+			"location_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the location",
 				Optional:            true,
 				Computed:            true,
 			},
-			"image_id": {
-				Type:                types.Int64Type,
+			"image_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the image",
 				Optional:            true,
 				Computed:            true,
 			},
-			"product_id": {
-				Type:                types.Int64Type,
+			"product_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the product",
 				Optional:            true,
 				Computed:            true,
 			},
-			"key_pair_id": {
-				Type:                types.Int64Type,
+			"key_pair_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the key pair",
 				Optional:            true,
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeServerDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeServerDataSource() datasource.DataSource {
+	return &computeServerDataSource{}
+}
+
+func (c *computeServerDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_server"
+}
+
+func (c *computeServerDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeServerDataSource{
-		serverService: compute.NewServerService(prov.client),
-		orderService:  common.NewOrderService(prov.client),
-	}, diagnostics
+	c.client = client
 }
 
 type computeServerDataSource struct {
-	serverService compute.ServerService
-	orderService  common.OrderService
+	client flowClient
 }
 
-func (c computeServerDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (c computeServerDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config computeServerDataSourceData
 	response.Diagnostics.Append(request.Config.Get(ctx, &config)...)
 	if response.Diagnostics.HasError() {
 		return
 	}
 
-	servers, err := c.serverService.List(ctx, goclient.Cursor{NoFilter: 1})
+	servers, err := c.client.Compute.Server.List(ctx, core.CursorAll)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get server: %s", err))
 		return

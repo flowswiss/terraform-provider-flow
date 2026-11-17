@@ -4,18 +4,21 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
 	"github.com/hashicorp/terraform-plugin-framework/path"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
-	_ tfsdk.ResourceType            = (*computeCertificateResourceType)(nil)
-	_ tfsdk.Resource                = (*computeCertificateResource)(nil)
-	_ tfsdk.ResourceWithImportState = (*computeCertificateResource)(nil)
+	_ resource.Resource                = (*computeCertificateResource)(nil)
+	_ resource.ResourceWithConfigure   = (*computeCertificateResource)(nil)
+	_ resource.ResourceWithImportState = (*computeCertificateResource)(nil)
 )
 
 type computeCertificateResourceAttributes struct {
@@ -49,165 +52,149 @@ type computeCertificateResourceData struct {
 }
 
 func (c *computeCertificateResourceData) FromEntity(certificate compute.Certificate) {
-	c.ID = types.Int64{Value: int64(certificate.ID)}
-	c.Name = types.String{Value: certificate.Name}
-	c.LocationID = types.Int64{Value: int64(certificate.Location.ID)}
+	c.ID = types.Int64Value(int64(certificate.ID))
+	c.Name = types.StringValue(certificate.Name)
+	c.LocationID = types.Int64Value(int64(certificate.Location.ID))
 
 	c.Info = &computeCertificateResourceInfo{
 		Subject: &computeCertificateResourceAttributes{
-			CommonName:         types.String{Value: certificate.Details.Subject["CN"]},
-			OrganizationalUnit: types.String{Value: certificate.Details.Subject["OU"]},
-			Organization:       types.String{Value: certificate.Details.Subject["O"]},
-			Locality:           types.String{Value: certificate.Details.Subject["L"]},
-			Province:           types.String{Value: certificate.Details.Subject["P"]},
-			Country:            types.String{Value: certificate.Details.Subject["C"]},
+			CommonName:         types.StringValue(certificate.Details.Subject["CN"]),
+			OrganizationalUnit: types.StringValue(certificate.Details.Subject["OU"]),
+			Organization:       types.StringValue(certificate.Details.Subject["O"]),
+			Locality:           types.StringValue(certificate.Details.Subject["L"]),
+			Province:           types.StringValue(certificate.Details.Subject["P"]),
+			Country:            types.StringValue(certificate.Details.Subject["C"]),
 		},
 		Issuer: &computeCertificateResourceAttributes{
-			CommonName:         types.String{Value: certificate.Details.Issuer["CN"]},
-			OrganizationalUnit: types.String{Value: certificate.Details.Issuer["OU"]},
-			Organization:       types.String{Value: certificate.Details.Issuer["O"]},
-			Locality:           types.String{Value: certificate.Details.Issuer["L"]},
-			Province:           types.String{Value: certificate.Details.Issuer["P"]},
-			Country:            types.String{Value: certificate.Details.Issuer["C"]},
+			CommonName:         types.StringValue(certificate.Details.Issuer["CN"]),
+			OrganizationalUnit: types.StringValue(certificate.Details.Issuer["OU"]),
+			Organization:       types.StringValue(certificate.Details.Issuer["O"]),
+			Locality:           types.StringValue(certificate.Details.Issuer["L"]),
+			Province:           types.StringValue(certificate.Details.Issuer["P"]),
+			Country:            types.StringValue(certificate.Details.Issuer["C"]),
 		},
-		NotBefore:    types.String{Value: certificate.Details.ValidFrom.String()},
-		NotAfter:     types.String{Value: certificate.Details.ValidTo.String()},
-		SerialNumber: types.String{Value: certificate.Details.Serial},
+		NotBefore:    types.StringValue(certificate.Details.ValidFrom.String()),
+		NotAfter:     types.StringValue(certificate.Details.ValidTo.String()),
+		SerialNumber: types.StringValue(certificate.Details.Serial),
 	}
 }
 
-type computeCertificateResourceType struct{}
-
-func (c computeCertificateResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	certificateInfoAttributes := map[string]tfsdk.Attribute{
-		"common_name": {
-			Type:                types.StringType,
+func (c computeCertificateResource) Schema(ctx context.Context, request resource.SchemaRequest, response *resource.SchemaResponse) {
+	certificateInfoAttributes := map[string]schema.Attribute{
+		"common_name": schema.StringAttribute{
 			MarkdownDescription: "common name of the certificate (CN)",
 			Computed:            true,
 		},
-		"organizational_unit": {
-			Type:                types.StringType,
+		"organizational_unit": schema.StringAttribute{
 			MarkdownDescription: "organizational unit of the certificate (OU)",
 			Computed:            true,
 		},
-		"organization": {
-			Type:                types.StringType,
+		"organization": schema.StringAttribute{
 			MarkdownDescription: "organization of the certificate (O)",
 			Computed:            true,
 		},
-		"locality": {
-			Type:                types.StringType,
+		"locality": schema.StringAttribute{
 			MarkdownDescription: "locality of the certificate (L)",
 			Computed:            true,
 		},
-		"province": {
-			Type:                types.StringType,
+		"province": schema.StringAttribute{
 			MarkdownDescription: "province of the certificate (S)",
 			Computed:            true,
 		},
-		"country": {
-			Type:                types.StringType,
+		"country": schema.StringAttribute{
 			MarkdownDescription: "country of the certificate (C)",
 			Computed:            true,
 		},
 	}
 
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the certificate",
 				Computed:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.UseStateForUnknown(),
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.UseStateForUnknown(),
 				},
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the certificate",
 				Required:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.RequiresReplace(),
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
 				},
 			},
-			"location_id": {
-				Type:                types.Int64Type,
+			"location_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the location",
 				Required:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					tfsdk.RequiresReplace(),
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.RequiresReplace(),
 				},
 			},
-			"certificate": {
-				Type:                types.StringType,
-				MarkdownDescription: "certificate in base64 encoded PEM format",
+			"certificate": schema.StringAttribute{
+				MarkdownDescription: "certificate in base64 encoded PEM format; editing it produces no plan, rotate with `terraform apply -replace=`",
 				Required:            true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					// TODO: write-only once the framework is on 1.x (Terraform ≥ 1.11 WriteOnly attributes) — until then an imported resource plans a replace here because the api never returns the value
-					tfsdk.RequiresReplace(),
-				},
+				WriteOnly:           true,
 			},
-			"private_key": {
-				Type:                types.StringType,
-				MarkdownDescription: "private key in base64 encoded PEM format",
+			"private_key": schema.StringAttribute{
+				MarkdownDescription: "private key in base64 encoded PEM format; editing it produces no plan, rotate with `terraform apply -replace=`",
 				Required:            true,
 				Sensitive:           true,
-				PlanModifiers: tfsdk.AttributePlanModifiers{
-					// TODO: write-only once the framework is on 1.x (Terraform ≥ 1.11 WriteOnly attributes) — until then an imported resource plans a replace here because the api never returns the value
-					tfsdk.RequiresReplace(),
-				},
+				WriteOnly:           true,
 			},
-			"info": {
-				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-					"subject": {
-						Attributes:          tfsdk.SingleNestedAttributes(certificateInfoAttributes),
+			"info": schema.SingleNestedAttribute{
+				Attributes: map[string]schema.Attribute{
+					"subject": schema.SingleNestedAttribute{
+						Attributes:          certificateInfoAttributes,
 						MarkdownDescription: "subject of the certificate",
 						Computed:            true,
 					},
-					"issuer": {
-						Attributes:          tfsdk.SingleNestedAttributes(certificateInfoAttributes),
+					"issuer": schema.SingleNestedAttribute{
+						Attributes:          certificateInfoAttributes,
 						MarkdownDescription: "issuer of the certificate",
 						Computed:            true,
 					},
-					"not_before": {
-						Type:                types.StringType,
+					"not_before": schema.StringAttribute{
 						MarkdownDescription: "not before date of the certificate",
 						Computed:            true,
 					},
-					"not_after": {
-						Type:                types.StringType,
+					"not_after": schema.StringAttribute{
 						MarkdownDescription: "not after date of the certificate",
 						Computed:            true,
 					},
-					"serial_number": {
-						Type:                types.StringType,
+					"serial_number": schema.StringAttribute{
 						MarkdownDescription: "serial number of the certificate",
 						Computed:            true,
 					},
-				}),
+				},
 				MarkdownDescription: "information about the certificate",
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeCertificateResourceType) NewResource(ctx context.Context, p tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeCertificateResource() resource.Resource {
+	return &computeCertificateResource{}
+}
+
+func (c *computeCertificateResource) Metadata(ctx context.Context, request resource.MetadataRequest, response *resource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_certificate"
+}
+
+func (c *computeCertificateResource) Configure(ctx context.Context, request resource.ConfigureRequest, response *resource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeCertificateResource{
-		certificateService: compute.NewCertificateService(prov.client),
-	}, diagnostics
+	c.client = client
 }
 
 type computeCertificateResource struct {
-	certificateService compute.CertificateService
+	client flowClient
 }
 
-func (c computeCertificateResource) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
+func (c computeCertificateResource) Create(ctx context.Context, request resource.CreateRequest, response *resource.CreateResponse) {
 	var config computeCertificateResourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -215,16 +202,16 @@ func (c computeCertificateResource) Create(ctx context.Context, request tfsdk.Cr
 		return
 	}
 
-	create := compute.CertificateCreate{
-		Name:        config.Name.Value,
-		LocationID:  int(config.LocationID.Value),
-		Certificate: config.Certificate.Value,
-		PrivateKey:  config.PrivateKey.Value,
+	create := compute.CertificateCreateReq{
+		Name:        config.Name.ValueString(),
+		LocationID:  int(config.LocationID.ValueInt64()),
+		Certificate: config.Certificate.ValueString(),
+		PrivateKey:  config.PrivateKey.ValueString(),
 	}
 
 	var certificate compute.Certificate
 	err := retryCreate(ctx, "create certificate", func() (err error) {
-		certificate, err = c.certificateService.Create(ctx, create)
+		certificate, err = c.client.Compute.Certificate.Create(ctx, create)
 		return err
 	})
 	if err != nil {
@@ -235,15 +222,11 @@ func (c computeCertificateResource) Create(ctx context.Context, request tfsdk.Cr
 	var state computeCertificateResourceData
 	state.FromEntity(certificate)
 
-	// copy the certificate and private key from the config because the api does not return it
-	state.Certificate = config.Certificate
-	state.PrivateKey = config.PrivateKey
-
 	diagnostics = response.State.Set(ctx, state)
 	response.Diagnostics.Append(diagnostics...)
 }
 
-func (c computeCertificateResource) Read(ctx context.Context, request tfsdk.ReadResourceRequest, response *tfsdk.ReadResourceResponse) {
+func (c computeCertificateResource) Read(ctx context.Context, request resource.ReadRequest, response *resource.ReadResponse) {
 	var state computeCertificateResourceData
 	diagnostics := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diagnostics...)
@@ -251,14 +234,14 @@ func (c computeCertificateResource) Read(ctx context.Context, request tfsdk.Read
 		return
 	}
 
-	list, err := c.certificateService.List(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := c.client.Compute.Certificate.List(ctx, core.CursorAll)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list certificates: %s", err))
 		return
 	}
 
 	for _, certificate := range list.Items {
-		if certificate.ID == int(state.ID.Value) {
+		if certificate.ID == int(state.ID.ValueInt64()) {
 			state.FromEntity(certificate)
 
 			diagnostics = response.State.Set(ctx, state)
@@ -267,14 +250,14 @@ func (c computeCertificateResource) Read(ctx context.Context, request tfsdk.Read
 		}
 	}
 
-	removeGone(ctx, response, fmt.Sprintf("certificate %d", state.ID.Value))
+	removeGone(ctx, response, fmt.Sprintf("certificate %d", state.ID.ValueInt64()))
 }
 
-func (c computeCertificateResource) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
+func (c computeCertificateResource) Update(ctx context.Context, request resource.UpdateRequest, response *resource.UpdateResponse) {
 	response.Diagnostics.AddError("Not Supported", "updating a certificate is not supported")
 }
 
-func (c computeCertificateResource) Delete(ctx context.Context, request tfsdk.DeleteResourceRequest, response *tfsdk.DeleteResourceResponse) {
+func (c computeCertificateResource) Delete(ctx context.Context, request resource.DeleteRequest, response *resource.DeleteResponse) {
 	var state computeCertificateResourceData
 	diagnostics := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diagnostics...)
@@ -283,7 +266,7 @@ func (c computeCertificateResource) Delete(ctx context.Context, request tfsdk.De
 	}
 
 	err := retryDelete(ctx, "delete certificate", func() error {
-		return c.certificateService.Delete(ctx, int(state.ID.Value))
+		return c.client.Compute.Certificate.Delete(ctx, compute.CertificateDeleteReq{ID: uint(state.ID.ValueInt64())})
 	})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to delete certificate: %s", err))
@@ -291,6 +274,6 @@ func (c computeCertificateResource) Delete(ctx context.Context, request tfsdk.De
 	}
 }
 
-func (c computeCertificateResource) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
+func (c computeCertificateResource) ImportState(ctx context.Context, request resource.ImportStateRequest, response *resource.ImportStateResponse) {
 	importStatePassthroughInt64ID(ctx, path.Root("id"), request, response)
 }

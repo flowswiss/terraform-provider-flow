@@ -4,17 +4,17 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/common"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/common"
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
-var _ tfsdk.DataSourceType = (*locationDataSourceType)(nil)
-var _ tfsdk.DataSource = (*locationDataSource)(nil)
+var _ datasource.DataSource = (*locationDataSource)(nil)
+var _ datasource.DataSourceWithConfigure = (*locationDataSource)(nil)
 
 type locationDataSourceData struct {
 	ID               types.Int64            `tfsdk:"id"`
@@ -25,9 +25,9 @@ type locationDataSourceData struct {
 }
 
 func (l *locationDataSourceData) FromEntity(location common.Location) {
-	l.ID = types.Int64{Value: int64(location.ID)}
-	l.Name = types.String{Value: location.Name}
-	l.Key = types.String{Value: location.Key}
+	l.ID = types.Int64Value(int64(location.ID))
+	l.Name = types.StringValue(location.Name)
+	l.Key = types.StringValue(location.Key)
 
 	if len(location.Modules) == 0 {
 		l.AvailableModules = nil
@@ -40,15 +40,15 @@ func (l *locationDataSourceData) FromEntity(location common.Location) {
 }
 
 func (l locationDataSourceData) AppliesTo(location common.Location) bool {
-	if !l.ID.Null && location.ID != int(l.ID.Value) {
+	if !l.ID.IsNull() && location.ID != int(l.ID.ValueInt64()) {
 		return false
 	}
 
-	if !l.Name.Null && location.Name != l.Name.Value {
+	if !l.Name.IsNull() && location.Name != l.Name.ValueString() {
 		return false
 	}
 
-	if !l.Key.Null && location.Key != l.Key.Value {
+	if !l.Key.IsNull() && location.Key != l.Key.ValueString() {
 		return false
 	}
 
@@ -63,64 +63,63 @@ func (l locationDataSourceData) AppliesTo(location common.Location) bool {
 	return true
 }
 
-type locationDataSourceType struct{}
+func (l locationDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	var moduleSchema datasource.SchemaResponse
+	moduleDataSource{}.Schema(ctx, datasource.SchemaRequest{}, &moduleSchema)
 
-func (l locationDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	moduleSchema, diagnostics := moduleDataSourceType{}.GetSchema(ctx)
-	if diagnostics.HasError() {
-		return tfsdk.Schema{}, diagnostics
-	}
-
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the location",
 				Optional:            true,
 				Computed:            true,
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the location",
 				Optional:            true,
 				Computed:            true,
 			},
-			"key": {
-				Type:                types.StringType,
+			"key": schema.StringAttribute{
 				MarkdownDescription: "key of the location",
 				Optional:            true,
 				Computed:            true,
 			},
-			"required_modules": {
-				Attributes:          tfsdk.ListNestedAttributes(moduleSchema.Attributes),
+			"required_modules": schema.ListNestedAttribute{
+				NestedObject:        schema.NestedAttributeObject{Attributes: moduleSchema.Schema.Attributes},
 				MarkdownDescription: "list of required modules",
 				Optional:            true,
 			},
-			"available_modules": {
-				Attributes:          tfsdk.ListNestedAttributes(moduleSchema.Attributes),
+			"available_modules": schema.ListNestedAttribute{
+				NestedObject:        schema.NestedAttributeObject{Attributes: moduleSchema.Schema.Attributes},
 				MarkdownDescription: "list of available modules",
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (l locationDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newLocationDataSource() datasource.DataSource {
+	return &locationDataSource{}
+}
+
+func (l *locationDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_location"
+}
+
+func (l *locationDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return locationDataSource{
-		client: prov.client,
-	}, diagnostics
+	l.client = client
 }
 
 type locationDataSource struct {
-	client goclient.Client
+	client flowClient
 }
 
-func (l locationDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (l locationDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config locationDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -128,7 +127,7 @@ func (l locationDataSource) Read(ctx context.Context, request tfsdk.ReadDataSour
 		return
 	}
 
-	list, err := common.NewLocationService(l.client).List(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := l.client.Common.Location.List(ctx, core.CursorAll)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get locations: %s", err))
 		return

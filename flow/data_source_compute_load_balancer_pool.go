@@ -5,18 +5,18 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
-	_ tfsdk.DataSourceType = (*computeLoadBalancerPoolDataSourceType)(nil)
-	_ tfsdk.DataSource     = (*computeLoadBalancerPoolDataSource)(nil)
+	_ datasource.DataSource              = (*computeLoadBalancerPoolDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*computeLoadBalancerPoolDataSource)(nil)
 )
 
 type computeLoadBalancerHTTPHealthCheckDataSourceData struct {
@@ -54,189 +54,177 @@ type computeLoadBalancerPoolDataSourceData struct {
 }
 
 func (c *computeLoadBalancerPoolDataSourceData) FromEntity(loadBalancerID int, pool compute.LoadBalancerPool) {
-	c.ID = types.Int64{Value: int64(pool.ID)}
-	c.LoadBalancerID = types.Int64{Value: int64(loadBalancerID)}
-	c.Name = types.String{Value: pool.Name}
+	c.ID = types.Int64Value(int64(pool.ID))
+	c.LoadBalancerID = types.Int64Value(int64(loadBalancerID))
+	c.Name = types.StringValue(pool.Name)
 
-	c.BalancingAlgorithmID = types.Int64{Value: int64(pool.Algorithm.ID)}
-	c.StickySession = types.Bool{Value: pool.StickySession}
+	c.BalancingAlgorithmID = types.Int64Value(int64(pool.Algorithm.ID))
+	c.StickySession = types.BoolValue(pool.StickySession)
 
-	c.EntryProtocolID = types.Int64{Value: int64(pool.EntryProtocol.ID)}
-	c.EntryPort = types.Int64{Value: int64(pool.EntryPort)}
-	c.TargetProtocolID = types.Int64{Value: int64(pool.TargetProtocol.ID)}
+	c.EntryProtocolID = types.Int64Value(int64(pool.EntryProtocol.ID))
+	c.EntryPort = types.Int64Value(int64(pool.EntryPort))
+	c.TargetProtocolID = types.Int64Value(int64(pool.TargetProtocol.ID))
 
 	if pool.Certificate.ID == 0 {
-		c.CertificateID = types.Int64{Null: true}
+		c.CertificateID = types.Int64Null()
 	} else {
-		c.CertificateID = types.Int64{Value: int64(pool.Certificate.ID)}
+		c.CertificateID = types.Int64Value(int64(pool.Certificate.ID))
 	}
 
 	c.HealthCheck = &computeLoadBalancerHealthCheckDataSourceData{
-		TypeID:             types.Int64{Value: int64(pool.HealthCheck.Type.ID)},
+		TypeID:             types.Int64Value(int64(pool.HealthCheck.Type.ID)),
 		HTTP:               nil,
-		Interval:           types.String{Value: (time.Duration(pool.HealthCheck.Interval) * time.Second).String()},
-		Timeout:            types.String{Value: (time.Duration(pool.HealthCheck.Timeout) * time.Second).String()},
-		HealthyThreshold:   types.Int64{Value: int64(pool.HealthCheck.HealthyThreshold)},
-		UnhealthyThreshold: types.Int64{Value: int64(pool.HealthCheck.UnhealthyThreshold)},
+		Interval:           types.StringValue((time.Duration(pool.HealthCheck.Interval) * time.Second).String()),
+		Timeout:            types.StringValue((time.Duration(pool.HealthCheck.Timeout) * time.Second).String()),
+		HealthyThreshold:   types.Int64Value(int64(pool.HealthCheck.HealthyThreshold)),
+		UnhealthyThreshold: types.Int64Value(int64(pool.HealthCheck.UnhealthyThreshold)),
 	}
 
 	if pool.HealthCheck.HTTPMethod != "" || pool.HealthCheck.HTTPPath != "" {
 		c.HealthCheck.HTTP = &computeLoadBalancerHTTPHealthCheckDataSourceData{
-			Method: types.String{Value: pool.HealthCheck.HTTPMethod},
-			Path:   types.String{Value: pool.HealthCheck.HTTPPath},
+			Method: types.StringValue(pool.HealthCheck.HTTPMethod),
+			Path:   types.StringValue(pool.HealthCheck.HTTPPath),
 		}
 	}
 }
 
 func (c computeLoadBalancerPoolDataSourceData) AppliesTo(pool compute.LoadBalancerPool) bool {
-	if !c.ID.Null && c.ID.Value != int64(pool.ID) {
+	if !c.ID.IsNull() && c.ID.ValueInt64() != int64(pool.ID) {
 		return false
 	}
 
-	if !c.BalancingAlgorithmID.Null && c.BalancingAlgorithmID.Value != int64(pool.Algorithm.ID) {
+	if !c.BalancingAlgorithmID.IsNull() && c.BalancingAlgorithmID.ValueInt64() != int64(pool.Algorithm.ID) {
 		return false
 	}
 
-	if !c.EntryProtocolID.Null && c.EntryProtocolID.Value != int64(pool.EntryProtocol.ID) {
+	if !c.EntryProtocolID.IsNull() && c.EntryProtocolID.ValueInt64() != int64(pool.EntryProtocol.ID) {
 		return false
 	}
 
-	if !c.EntryPort.Null && c.EntryPort.Value != int64(pool.EntryPort) {
+	if !c.EntryPort.IsNull() && c.EntryPort.ValueInt64() != int64(pool.EntryPort) {
 		return false
 	}
 
-	if !c.TargetProtocolID.Null && c.TargetProtocolID.Value != int64(pool.TargetProtocol.ID) {
+	if !c.TargetProtocolID.IsNull() && c.TargetProtocolID.ValueInt64() != int64(pool.TargetProtocol.ID) {
 		return false
 	}
 
 	return true
 }
 
-type computeLoadBalancerPoolDataSourceType struct{}
-
-func (c computeLoadBalancerPoolDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (c computeLoadBalancerPoolDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the load balancer pool",
 				Optional:            true,
 				Computed:            true,
 			},
-			"load_balancer_id": {
-				Type:                types.Int64Type,
+			"load_balancer_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the load balancer",
 				Required:            true,
 			},
 
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the load balancer pool",
 				Computed:            true,
 			},
 
-			"balancing_algorithm_id": {
-				Type:                types.Int64Type,
+			"balancing_algorithm_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the balancing algorithm",
 				Optional:            true,
 				Computed:            true,
 			},
-			"sticky_session": {
-				Type:                types.BoolType,
+			"sticky_session": schema.BoolAttribute{
 				MarkdownDescription: "whether the load balancer pool is sticky",
 				Computed:            true,
 			},
 
-			"entry_protocol_id": {
-				Type:                types.Int64Type,
+			"entry_protocol_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the entry protocol",
 				Optional:            true,
 				Computed:            true,
 			},
-			"entry_port": {
-				Type:                types.Int64Type,
+			"entry_port": schema.Int64Attribute{
 				MarkdownDescription: "entry port of the load balancer pool",
 				Optional:            true,
 				Computed:            true,
 			},
-			"target_protocol_id": {
-				Type:                types.Int64Type,
+			"target_protocol_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the target protocol",
 				Optional:            true,
 				Computed:            true,
 			},
 
-			"certificate_id": {
-				Type:                types.Int64Type,
+			"certificate_id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the certificate",
 				Computed:            true,
 			},
 
-			"health_check": {
-				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-					"type_id": {
-						Type:                types.Int64Type,
+			"health_check": schema.SingleNestedAttribute{
+				Attributes: map[string]schema.Attribute{
+					"type_id": schema.Int64Attribute{
 						MarkdownDescription: "unique identifier of the health check type",
 						Computed:            true,
 					},
-					"http": {
-						Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-							"method": {
-								Type:                types.StringType,
+					"http": schema.SingleNestedAttribute{
+						Attributes: map[string]schema.Attribute{
+							"method": schema.StringAttribute{
 								MarkdownDescription: "HTTP method of the health check",
 								Computed:            true,
 							},
-							"path": {
-								Type:                types.StringType,
+							"path": schema.StringAttribute{
 								MarkdownDescription: "path of the health check",
 								Computed:            true,
 							},
-						}),
+						},
 						Computed: true,
 					},
-					"interval": {
-						Type:                types.StringType,
+					"interval": schema.StringAttribute{
 						MarkdownDescription: "interval duration of the health check",
 						Computed:            true,
 					},
-					"timeout": {
-						Type:                types.StringType,
+					"timeout": schema.StringAttribute{
 						MarkdownDescription: "timeout duration of the health check",
 						Computed:            true,
 					},
-					"healthy_threshold": {
-						Type:                types.Int64Type,
+					"healthy_threshold": schema.Int64Attribute{
 						MarkdownDescription: "number of successful health checks before considering the target healthy",
 						Computed:            true,
 					},
-					"unhealthy_threshold": {
-						Type:                types.Int64Type,
+					"unhealthy_threshold": schema.Int64Attribute{
 						MarkdownDescription: "number of failed health checks before considering the target unhealthy",
 						Computed:            true,
 					},
-				}),
+				},
 				Computed: true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeLoadBalancerPoolDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeLoadBalancerPoolDataSource() datasource.DataSource {
+	return &computeLoadBalancerPoolDataSource{}
+}
+
+func (c *computeLoadBalancerPoolDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_load_balancer_pool"
+}
+
+func (c *computeLoadBalancerPoolDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeLoadBalancerPoolDataSource{
-		loadBalancerService: compute.NewLoadBalancerService(prov.client),
-	}, diagnostics
+	c.client = client
 }
 
 type computeLoadBalancerPoolDataSource struct {
-	loadBalancerService compute.LoadBalancerService
+	client flowClient
 }
 
-func (c computeLoadBalancerPoolDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (c computeLoadBalancerPoolDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config computeLoadBalancerPoolDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -244,9 +232,9 @@ func (c computeLoadBalancerPoolDataSource) Read(ctx context.Context, request tfs
 		return
 	}
 
-	loadBalancerID := int(config.LoadBalancerID.Value)
+	loadBalancerID := int(config.LoadBalancerID.ValueInt64())
 
-	list, err := c.loadBalancerService.Pools(loadBalancerID).List(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := c.client.Compute.LoadBalancerPool.List(ctx, compute.LoadBalancerPoolListReq{LoadBalancerID: uint(loadBalancerID), Cursor: core.CursorAll})
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to get load balancer pool: %s", err))
 		return

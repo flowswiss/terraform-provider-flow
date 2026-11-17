@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowswiss/goclient"
-	"github.com/flowswiss/goclient/compute"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/flowswiss/goclient/v2/compute"
+	"github.com/flowswiss/goclient/v2/core"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/flowswiss/terraform-provider-flow/filter"
 )
 
 var (
-	_ tfsdk.DataSourceType = (*computeLoadBalancerHealthCheckTypeDataSourceType)(nil)
-	_ tfsdk.DataSource     = (*computeLoadBalancerHealthCheckTypeDataSource)(nil)
+	_ datasource.DataSource              = (*computeLoadBalancerHealthCheckTypeDataSource)(nil)
+	_ datasource.DataSourceWithConfigure = (*computeLoadBalancerHealthCheckTypeDataSource)(nil)
 )
 
 type computeLoadBalancerHealthCheckTypeDataSourceData struct {
@@ -25,70 +25,71 @@ type computeLoadBalancerHealthCheckTypeDataSourceData struct {
 }
 
 func (c *computeLoadBalancerHealthCheckTypeDataSourceData) FromEntity(healthCheckType compute.LoadBalancerHealthCheckType) {
-	c.ID = types.Int64{Value: int64(healthCheckType.ID)}
-	c.Name = types.String{Value: healthCheckType.Name}
-	c.Key = types.String{Value: healthCheckType.Key}
+	c.ID = types.Int64Value(int64(healthCheckType.ID))
+	c.Name = types.StringValue(healthCheckType.Name)
+	c.Key = types.StringValue(healthCheckType.Key)
 }
 
 func (c computeLoadBalancerHealthCheckTypeDataSourceData) AppliesTo(healthCheckType compute.LoadBalancerHealthCheckType) bool {
-	if !c.ID.Null && int(c.ID.Value) != healthCheckType.ID {
+	if !c.ID.IsNull() && int(c.ID.ValueInt64()) != healthCheckType.ID {
 		return false
 	}
 
-	if !c.Name.Null && c.Name.Value != healthCheckType.Name {
+	if !c.Name.IsNull() && c.Name.ValueString() != healthCheckType.Name {
 		return false
 	}
 
-	if !c.Key.Null && c.Key.Value != healthCheckType.Key {
+	if !c.Key.IsNull() && c.Key.ValueString() != healthCheckType.Key {
 		return false
 	}
 
 	return true
 }
 
-type computeLoadBalancerHealthCheckTypeDataSourceType struct{}
-
-func (c computeLoadBalancerHealthCheckTypeDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				Type:                types.Int64Type,
+func (c computeLoadBalancerHealthCheckTypeDataSource) Schema(ctx context.Context, request datasource.SchemaRequest, response *datasource.SchemaResponse) {
+	response.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.Int64Attribute{
 				MarkdownDescription: "unique identifier of the load balancer health check type",
 				Optional:            true,
 				Computed:            true,
 			},
-			"name": {
-				Type:                types.StringType,
+			"name": schema.StringAttribute{
 				MarkdownDescription: "name of the load balancer health check type",
 				Optional:            true,
 				Computed:            true,
 			},
-			"key": {
-				Type:                types.StringType,
+			"key": schema.StringAttribute{
 				MarkdownDescription: "unique key of the load balancer health check type",
 				Optional:            true,
 				Computed:            true,
 			},
 		},
-	}, nil
+	}
 }
 
-func (c computeLoadBalancerHealthCheckTypeDataSourceType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	prov, diagnostics := convertToLocalProviderType(p)
-	if diagnostics.HasError() {
-		return nil, diagnostics
+func newComputeLoadBalancerHealthCheckTypeDataSource() datasource.DataSource {
+	return &computeLoadBalancerHealthCheckTypeDataSource{}
+}
+
+func (c *computeLoadBalancerHealthCheckTypeDataSource) Metadata(ctx context.Context, request datasource.MetadataRequest, response *datasource.MetadataResponse) {
+	response.TypeName = request.ProviderTypeName + "_compute_load_balancer_health_check_type"
+}
+
+func (c *computeLoadBalancerHealthCheckTypeDataSource) Configure(ctx context.Context, request datasource.ConfigureRequest, response *datasource.ConfigureResponse) {
+	client, ok := clientFromProviderData(request.ProviderData, &response.Diagnostics)
+	if !ok {
+		return
 	}
 
-	return computeLoadBalancerHealthCheckTypeDataSource{
-		loadBalancerEntityService: compute.NewLoadBalancerEntityService(prov.client),
-	}, diagnostics
+	c.client = client
 }
 
 type computeLoadBalancerHealthCheckTypeDataSource struct {
-	loadBalancerEntityService compute.LoadBalancerEntityService
+	client flowClient
 }
 
-func (c computeLoadBalancerHealthCheckTypeDataSource) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (c computeLoadBalancerHealthCheckTypeDataSource) Read(ctx context.Context, request datasource.ReadRequest, response *datasource.ReadResponse) {
 	var config computeLoadBalancerHealthCheckTypeDataSourceData
 	diagnostics := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diagnostics...)
@@ -96,7 +97,7 @@ func (c computeLoadBalancerHealthCheckTypeDataSource) Read(ctx context.Context, 
 		return
 	}
 
-	list, err := c.loadBalancerEntityService.ListHealthCheckTypes(ctx, goclient.Cursor{NoFilter: 1})
+	list, err := c.client.Compute.LoadBalancerEntity.ListHealthCheckTypes(ctx, core.CursorAll)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("unable to list load balancer health check types: %s", err))
 		return

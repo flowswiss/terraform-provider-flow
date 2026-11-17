@@ -24,7 +24,17 @@ description: |-
 
 - `network_id` (Number) unique identifier of the initial network (the organisation's default network when omitted)
 - `private_ip` (String) initial private ip of the load balancer
+- `timeouts` (Block, Optional) (see [below for nested schema](#nestedblock--timeouts))
 
 ### Read-Only
 
 - `id` (Number) unique identifier of the load balancer
+- `public_ip` (String) public ip of the load balancer, null while it has none. Attach one with `flow_compute_elastic_ip_load_balancer_attachment`
+
+<a id="nestedblock--timeouts"></a>
+### Nested Schema for `timeouts`
+
+Optional:
+
+- `create` (String) bounds the whole create; unset, the order wait and the wait for the load balancer to become mutable are bounded at 10m each; a string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration), such as "30s" or "2h45m"
+- `delete` (String) bounds the whole delete; unset, the load balancer is given 10m to disappear; a string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration), such as "30s" or "2h45m"

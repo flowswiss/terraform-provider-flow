@@ -19,3 +19,16 @@ description: |-
 
 - `server_id` (Number) identifier of the server for the attachment — changing it moves the volume to the other server
 - `volume_id` (Number) identifier of the volume for the attachment — changing it replaces the attachment (detach, attach), the volumes themselves are not touched
+
+### Optional
+
+- `timeouts` (Block, Optional) (see [below for nested schema](#nestedblock--timeouts))
+
+<a id="nestedblock--timeouts"></a>
+### Nested Schema for `timeouts`
+
+Optional:
+
+- `create` (String) bounds the whole attach; unset, the volume is given 5m to reach in use; a string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration), such as "30s" or "2h45m"
+- `delete` (String) bounds the whole detach; unset, the volume is given 5m to become available; a string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration), such as "30s" or "2h45m"
+- `update` (String) bounds detach and re-attach together; unset, each is given 5m; a string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration), such as "30s" or "2h45m"
