@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	version         = "dev"
+	version         = "1.1.1"
 	defaultEndpoint = "https://api.flow.swiss/"
 )
 

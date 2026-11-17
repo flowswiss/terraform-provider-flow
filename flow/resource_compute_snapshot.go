@@ -123,6 +123,8 @@ func (r computeSnapshotResource) Create(ctx context.Context, request tfsdk.Creat
 	available, err := r.waitForSnapshotAvailable(ctx, snapshot.ID)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for snapshot to be available: %s", err))
+		// No return: the snapshot already exists. Save it with the error, so
+		// Terraform replaces it on the next apply instead of forgetting it.
 	}
 	if available.ID != 0 {
 		snapshot = available

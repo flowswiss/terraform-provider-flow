@@ -157,6 +157,7 @@ func (c computeLoadBalancerMemberResource) Create(ctx context.Context, request t
 	_, err = waitForLoadBalancerMutable(ctx, c.loadBalancerService, loadBalancerID)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for load balancer to be mutable: %s", err))
+		return
 	}
 }
 

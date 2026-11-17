@@ -114,6 +114,8 @@ func (r computeVolumeAttachmentResource) Create(ctx context.Context, request tfs
 	attached, err := r.waitForVolumeStatus(ctx, "in use", int(config.VolumeID.Value), compute.VolumeStatusInUse)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for volume attachment: %s", err))
+		// No return: the attachment already exists. Save it with the error, so
+		// Terraform replaces it on the next apply instead of forgetting it.
 	}
 	if attached.ID != 0 {
 		volume = attached

@@ -226,6 +226,9 @@ func (c computeServerResource) Create(ctx context.Context, request tfsdk.CreateR
 	server, err := c.waitForServerStatus(ctx, order.Product.ID, compute.ServerStatusRunning, "running")
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for server to be running: %s", err))
+		// Return only if the server was never fetched. Otherwise it exists and is
+		// saved below with the error, so Terraform replaces it on the next apply
+		// instead of forgetting it.
 		if server.ID == 0 {
 			return
 		}

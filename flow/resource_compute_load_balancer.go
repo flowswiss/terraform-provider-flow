@@ -139,6 +139,9 @@ func (c computeLoadBalancerResource) Create(ctx context.Context, request tfsdk.C
 	loadBalancer, err := waitForLoadBalancerMutable(ctx, c.loadBalancerService, order.Product.ID)
 	if err != nil {
 		response.Diagnostics.AddError("Client Error", fmt.Sprintf("waiting for load balancer to be mutable: %s", err))
+		// Return only if the load balancer was never fetched. Otherwise it exists
+		// and is saved below with the error, so Terraform replaces it on the next
+		// apply instead of forgetting it.
 		if loadBalancer.ID == 0 {
 			return
 		}
